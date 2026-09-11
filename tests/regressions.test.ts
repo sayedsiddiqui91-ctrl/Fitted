@@ -5,6 +5,7 @@ import { CVDocument } from "../src/components/cv/CVDocument";
 import { DEFAULT_DESIGN, defaultLayout, newBullet, newCustomItem, newCustomSection, sampleContent } from "../src/lib/cv/defaults";
 import { applyAutoFixes, planAutoFixes } from "../src/lib/engine/autoFix";
 import { compareReadBack } from "../src/lib/engine/atsCheck";
+import { TEMPLATE_DEFS } from "../src/lib/cv/templates";
 import { analyzeJobDescription } from "../src/lib/engine/jobAnalysis";
 import { calculateJobMatch, identifyMissingKeywords } from "../src/lib/engine/match";
 import { generateOptimizationSuggestions } from "../src/lib/engine/optimize";
@@ -171,6 +172,26 @@ suite("Faithful import", () => {
     const runs = [h("EXPERIENCE"), h("EDUCATION"), h("SKILLS"), h("LEADERSHIP & IMPACT"), run({ text: "Managed a team of four", font: "Lato" }), run({ text: "KPMG", bold: true, fontSize: 10.5, font: "Lato-Bold" })];
     const mark = headingStyleMatcher(runs, isSectionHeading);
     expect(mark(runs[3]) && !mark(runs[4]) && !mark(runs[5]), runs.map((r) => `${r.text}:${mark(r)}`).join(" "));
+  });
+});
+
+// Requested: a CV photo, shown only on templates designed for it
+suite("CV photo", () => {
+  test("the photo appears only on photo-enabled templates (and exactly once)", () => {
+    const content = sampleContent();
+    content.personal.photo = "data:image/jpeg;base64,/9j/AAAA";
+    const enabled = TEMPLATE_DEFS.filter((t) => t.photo).map((t) => t.id);
+    expect(enabled.length >= 5, `photo templates: ${enabled.join(", ")}`);
+    for (const t of TEMPLATE_DEFS) {
+      const html = renderToStaticMarkup(createElement(CVDocument, { doc: { content, layout: defaultLayout(), design: { ...DEFAULT_DESIGN, template: t.id } } }));
+      const count = html.split('class="cv-photo"').length - 1;
+      expect(count === (t.photo ? 1 : 0), `${t.name}: ${count} photo(s), template photo=${t.photo}`);
+    }
+  });
+  test("no photo means no image and no layout change", () => {
+    const content = sampleContent();
+    const html = renderToStaticMarkup(createElement(CVDocument, { doc: { content, layout: defaultLayout(), design: { ...DEFAULT_DESIGN, template: "international" } } }));
+    expect(!html.includes("cv-photo") && !html.includes("cv-h-details-photo"), "no photo markup without a photo");
   });
 });
 

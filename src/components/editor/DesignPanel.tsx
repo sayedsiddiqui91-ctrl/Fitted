@@ -71,7 +71,10 @@ export function DesignPanel({ doc, update }: { doc: CVDoc; update: Update }) {
                 <span className="truncate text-[13px] font-medium">{t.name}</span>
                 {d.template === t.id && <Check className="size-3.5 shrink-0 text-accent" aria-hidden />}
               </div>
-              <div className="px-1 pb-0.5 pt-1">{t.atsFriendly ? <Badge tone="success">ATS-friendly</Badge> : <Badge>Visual</Badge>}</div>
+              <div className="flex flex-wrap gap-1 px-1 pb-0.5 pt-1">
+                {t.atsFriendly ? <Badge tone="success">ATS-friendly</Badge> : <Badge>Visual</Badge>}
+                {t.photo && <Badge>Photo</Badge>}
+              </div>
             </button>
           ))}
         </div>

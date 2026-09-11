@@ -18,6 +18,8 @@ export const PersonalSchema = z.object({
   website: z.string(),
   linkedin: z.string(),
   links: z.array(LinkSchema),
+  /** Profile photo as a small JPEG data URL, stored locally with the CV. Shown only on templates that support photos. */
+  photo: z.string().optional(),
 });
 
 export const ExperienceSchema = z.object({

@@ -196,6 +196,15 @@ export const CV_CSS = `
 
 /* ── Timeline ── */
 .cv-t-timeline .cv-name{color:var(--cv-accent)}
+/* Profile photo (photo-enabled templates only) */
+.cv-photo{width:calc(var(--cv-fs) * 7pt);height:calc(var(--cv-fs) * 7pt);border-radius:50%;object-fit:cover;flex-shrink:0;display:block;background:var(--cv-rule);-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.cv-h-photo{display:flex;align-items:center;gap:1.1em}
+.cv-h-photo > .cv-h-text{min-width:0;flex:1}
+.cv-h-center.cv-h-photo{flex-direction:column;gap:.6em}
+.cv-h-details-photo{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:1.2em;align-items:start}
+.cv-aside-photo{display:flex;justify-content:center;margin:0 0 1.1em}
+.cv-aside-photo .cv-photo{width:calc(var(--cv-fs) * 9pt);height:calc(var(--cv-fs) * 9pt);box-shadow:0 0 0 3px rgba(255,255,255,.85)}
+.cv-t-creative .cv-photo{box-shadow:0 0 0 2px rgba(255,255,255,.85)}
 .cv-t-timeline .cv-h2{color:var(--cv-text)}
 .cv-t-timeline .cv-item.cv-tl{margin-bottom:calc(.55em * var(--cv-ss))}
 `;

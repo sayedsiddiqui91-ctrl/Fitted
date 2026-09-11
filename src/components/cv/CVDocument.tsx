@@ -65,6 +65,9 @@ export function CVDocument({ doc, showPlaceholders = false, interactive = true }
   const visible = layout.order.filter((k) => !layout.hidden.includes(k));
   const fullDoc = doc as CVDoc;
   const contacts = contactItems(content, interactive);
+  // Profile photo: only on templates designed for it; sidebar-contact templates show it at the top of the sidebar
+  const photo = def.photo && hasText(content.personal.photo ?? "") ? <img className="cv-photo" src={content.personal.photo} alt={content.personal.fullName ? `Photo of ${content.personal.fullName}` : "Profile photo"} /> : null;
+  const photoInAside = !!photo && def.layout !== "single" && def.contactInSidebar;
 
   const renderSection = (key: string, zone: "main" | "aside") => {
     const node = sectionBody(key, content, def, zone);
@@ -86,7 +89,7 @@ export function CVDocument({ doc, showPlaceholders = false, interactive = true }
     );
   };
 
-  const header = <Header content={content} def={def} contacts={def.contactInSidebar ? [] : contacts} showPlaceholders={showPlaceholders} />;
+  const header = <Header content={content} def={def} contacts={def.contactInSidebar ? [] : contacts} showPlaceholders={showPlaceholders} photo={photoInAside ? null : photo} />;
 
   let body: ReactNode;
   if (def.layout === "single") {
@@ -101,6 +104,7 @@ export function CVDocument({ doc, showPlaceholders = false, interactive = true }
     const mainKeys = visible.filter((k) => !def.sidebarSections.includes(k));
     const aside = (
       <aside className="cv-aside">
+        {photoInAside && <div className="cv-aside-photo">{photo}</div>}
         {def.contactInSidebar && (contacts.length > 0 || showPlaceholders) && (
           <section className="cv-section" data-section="contact">
             <h2 className="cv-h2">Contact</h2>
@@ -131,7 +135,7 @@ export function CVDocument({ doc, showPlaceholders = false, interactive = true }
   );
 }
 
-function Header({ content, def, contacts, showPlaceholders }: { content: CVContent; def: TemplateDef; contacts: ContactItem[]; showPlaceholders: boolean }) {
+function Header({ content, def, contacts, showPlaceholders, photo }: { content: CVContent; def: TemplateDef; contacts: ContactItem[]; showPlaceholders: boolean; photo?: ReactNode }) {
   const p = content.personal;
   const empty = !hasText(p.fullName) && !hasText(p.headline) && contacts.length === 0;
   const ph = showPlaceholders && empty;
@@ -144,9 +148,12 @@ function Header({ content, def, contacts, showPlaceholders }: { content: CVConte
   if (def.header === "split") {
     return (
       <header className="cv-header cv-h-split">
-        <div className="cv-h-id">
-          {name}
-          {headline}
+        <div className={photo ? "cv-h-id cv-h-photo" : "cv-h-id"}>
+          {photo}
+          <div className="cv-h-text">
+            {name}
+            {headline}
+          </div>
         </div>
         {contacts.length > 0 ? (
           <div className="cv-contact cv-contact-stack">
@@ -162,28 +169,34 @@ function Header({ content, def, contacts, showPlaceholders }: { content: CVConte
   }
 
   if (def.header === "details") {
+    // European-style: details on the left, photo on the right
     return (
-      <header className="cv-header">
-        {name}
-        {headline}
-        {contacts.length > 0 ? (
-          <dl className="cv-details">
-            {contacts.map((c, i) => (
-              <Fragment key={i}>
-                <dt>{c.label}</dt>
-                <dd>{c.node}</dd>
-              </Fragment>
-            ))}
-          </dl>
-        ) : (
-          ph && placeholderContact
-        )}
+      <header className={photo ? "cv-header cv-h-details-photo" : "cv-header"}>
+        <div className="cv-h-text">
+          {name}
+          {headline}
+          {contacts.length > 0 ? (
+            <dl className="cv-details">
+              {contacts.map((c, i) => (
+                <Fragment key={i}>
+                  <dt>{c.label}</dt>
+                  <dd>{c.node}</dd>
+                </Fragment>
+              ))}
+            </dl>
+          ) : (
+            ph && placeholderContact
+          )}
+        </div>
+        {photo}
       </header>
     );
   }
 
   return (
-    <header className={`cv-header cv-h-${def.header}`}>
+    <header className={`cv-header cv-h-${def.header}${photo ? " cv-h-photo" : ""}`}>
+      {photo}
+      <div className="cv-h-text">
       {name}
       {headline}
       {contacts.length > 0 ? (
@@ -202,6 +215,7 @@ function Header({ content, def, contacts, showPlaceholders }: { content: CVConte
       ) : (
         ph && placeholderContact
       )}
+      </div>
     </header>
   );
 }

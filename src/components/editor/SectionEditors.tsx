@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from "react";
 import { Plus, Sparkles, Tags, X } from "lucide-react";
 import type { Bullet, CVDoc, Skill } from "@/lib/cv/schema";
+import { PhotoField } from "./PhotoField";
 import type { AssistantSelection } from "@/lib/ai/types";
 import {
   newAward,
@@ -154,6 +155,7 @@ export function PersonalEditor({ doc, update }: EditorProps) {
   const set = (patch: Partial<typeof p>) => update((d) => void Object.assign(d.content.personal, patch));
   return (
     <div className="flex flex-col gap-3">
+      <PhotoField doc={doc} update={update} />
       <div className={grid2}>
         <TextField label="Full name" value={p.fullName} onChange={(v) => set({ fullName: v })} autoComplete="name" placeholder="Jordan Lee" />
         <TextField label="Professional title" value={p.headline} onChange={(v) => set({ headline: v })} autoComplete="organization-title" placeholder="Finance Analyst" />
@@ -175,7 +177,7 @@ export function PersonalEditor({ doc, update }: EditorProps) {
       <Button size="sm" variant="ghost" className="self-start text-accent hover:text-accent" icon={<Plus className="size-4" />} onClick={() => update((d) => void d.content.personal.links.push({ id: uid("lnk"), label: "", url: "" }))}>
         Add link
       </Button>
-      <p className="text-xs text-subtle">Only include what's needed. A city and country is enough — no full address, photo or date of birth required.</p>
+      <p className="text-xs text-subtle">Only include what's needed. A city and country is enough — no full address or date of birth required, and a photo is optional.</p>
     </div>
   );
 }
