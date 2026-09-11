@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { CVDocument } from "../src/components/cv/CVDocument";
 import { DEFAULT_DESIGN, defaultLayout, newBullet, newCustomItem, newCustomSection, sampleContent } from "../src/lib/cv/defaults";
 import { applyAutoFixes, planAutoFixes } from "../src/lib/engine/autoFix";
+import { compareReadBack } from "../src/lib/engine/atsCheck";
 import { analyzeJobDescription } from "../src/lib/engine/jobAnalysis";
 import { calculateJobMatch, identifyMissingKeywords } from "../src/lib/engine/match";
 import { generateOptimizationSuggestions } from "../src/lib/engine/optimize";
@@ -170,6 +171,39 @@ suite("Faithful import", () => {
     const runs = [h("EXPERIENCE"), h("EDUCATION"), h("SKILLS"), h("LEADERSHIP & IMPACT"), run({ text: "Managed a team of four", font: "Lato" }), run({ text: "KPMG", bold: true, fontSize: 10.5, font: "Lato-Bold" })];
     const mark = headingStyleMatcher(runs, isSectionHeading);
     expect(mark(runs[3]) && !mark(runs[4]) && !mark(runs[5]), runs.map((r) => `${r.text}:${mark(r)}`).join(" "));
+  });
+});
+
+// Requested: an honest ATS test — read the CV back like a basic ATS and compare with what the user wrote
+suite("ATS read-back test", () => {
+  const c = sampleContent();
+  const dates = (e: { startDate: string; endDate: string; current?: boolean }) => `${e.startDate} – ${e.current ? "Present" : e.endDate}`;
+  const clean = [
+    c.personal.fullName,
+    [c.personal.email, c.personal.phone, c.personal.location].filter(Boolean).join(" | "),
+    "",
+    "SUMMARY",
+    c.summary,
+    "",
+    "EXPERIENCE",
+    ...c.experience.flatMap((e) => [`${e.role}   ${dates(e)}`, e.company, ...e.bullets.map((b) => `• ${b.text}`), ""]),
+    "EDUCATION",
+    ...c.education.map((e) => `${e.degree}${e.field ? ` in ${e.field}` : ""}, ${e.school}   ${dates(e)}`),
+    "",
+    "SKILLS",
+    c.skills.map((s) => s.name).join(", "),
+  ].join("\n");
+
+  test("a cleanly laid-out CV reads back correctly", () => {
+    const r = compareReadBack(c, clean);
+    expect(r.ok >= r.total - 1, `${r.ok}/${r.total}: ${JSON.stringify(r.checks.filter((x) => x.status !== "ok"))}`);
+    expect(r.checks.some((x) => x.label === "Email" && x.status === "ok"), "email must be read");
+  });
+  test("a CV whose experience can't be read is flagged", () => {
+    const broken = clean.replace(/EXPERIENCE[\s\S]*?EDUCATION/, "EDUCATION");
+    const r = compareReadBack(c, broken);
+    expect(r.checks.filter((x) => x.label.startsWith("Job:")).every((x) => x.status === "missed"), JSON.stringify(r.checks));
+    expect(r.ok < r.total, "score must drop");
   });
 });
 

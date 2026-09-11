@@ -3,7 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "motion/react";
 import { toast } from "sonner";
-import { AlertCircle, AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, ClipboardCheck, Cpu, Hand, Loader2, RefreshCw, Sparkles, Wand2 } from "lucide-react";
+import { AlertCircle, AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, CircleDashed, ClipboardCheck, Cpu, Hand, Loader2, RefreshCw, ScanText, Sparkles, Wand2, XCircle } from "lucide-react";
+import { atsReadBack } from "@/lib/ats/readBack";
+import type { ReadBackResult } from "@/lib/engine/atsCheck";
+import { templateMeta } from "@/lib/cv/meta";
 import type { CVDoc } from "@/lib/cv/schema";
 import type { EngineKind, ReviewItem, ReviewResult } from "@/lib/ai/types";
 import { reviewMyCV, withMinDuration } from "@/lib/ai/client";
@@ -42,6 +45,23 @@ export function ReviewSheet({
   const [fixMode, setFixMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [rerun, setRerun] = useState(false);
+  const [ats, setAts] = useState<ReadBackResult | null>(null);
+  const [atsBusy, setAtsBusy] = useState(false);
+
+  // ATS read-back test: runs with every review (and again after fixes are applied)
+  useEffect(() => {
+    if (!open || !result) return;
+    let cancelled = false;
+    setAtsBusy(true);
+    atsReadBack(doc)
+      .then((r) => !cancelled && setAts(r))
+      .catch(() => !cancelled && setAts(null))
+      .finally(() => !cancelled && setAtsBusy(false));
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result]);
 
   const run = async () => {
     setLoading(true);
@@ -212,10 +232,74 @@ export function ReviewSheet({
             <p className="mt-4 rounded-xl bg-surface-2 px-3 py-2.5 text-[13px] text-muted">No automatic fixes needed — anything left below needs your own input.</p>
           )}
 
+          {/* ── ATS read-back test: a real test of the file's layout ── */}
+          <div className="mt-4 rounded-2xl border border-border bg-surface p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="flex items-center gap-2 text-sm font-semibold">
+                  <ScanText className="size-4 text-accent" aria-hidden /> ATS read-back test
+                </p>
+                <p className="mt-1 text-[13px] text-muted">We laid your CV out exactly as it prints and read it back line by line, the way a basic applicant tracking system does.</p>
+              </div>
+              {ats && (
+                <span className={cn("shrink-0 rounded-lg px-2 py-1 text-xs font-semibold", ats.ok === ats.total ? "bg-success-soft text-success" : ats.ok >= ats.total * 0.75 ? "bg-warning-soft text-warning" : "bg-danger-soft text-danger")}>
+                  {ats.ok}/{ats.total}
+                </span>
+              )}
+            </div>
+            {atsBusy && !ats ? (
+              <p className="mt-3 flex items-center gap-2 text-[13px] text-subtle">
+                <Loader2 className="size-4 animate-spin" aria-hidden /> Reading your CV…
+              </p>
+            ) : ats ? (
+              <>
+                <p className="mt-3 text-sm font-medium">
+                  {ats.ok === ats.total
+                    ? "A basic ATS read every key detail correctly."
+                    : `${ats.ok} of ${ats.total} details read correctly${ats.partial ? ` (${ats.partial} partly)` : ""} — check the flagged ones.`}
+                </p>
+                {ats.ok < ats.total && !templateMeta(doc.design.template).atsFriendly && (
+                  <p className="mt-1 text-[13px] text-warning">Two-column templates are often read out of order. For online applications, switch to an ATS-friendly template in Design.</p>
+                )}
+                <ul className="mt-2 flex flex-col gap-1.5">
+                  {ats.checks.map((c) => (
+                    <li key={c.label} className="flex items-start gap-2 text-[13px]">
+                      {c.status === "ok" ? (
+                        <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-success" aria-label="Read correctly" />
+                      ) : c.status === "partial" ? (
+                        <CircleDashed className="mt-0.5 size-3.5 shrink-0 text-warning" aria-label="Partly read" />
+                      ) : (
+                        <XCircle className="mt-0.5 size-3.5 shrink-0 text-danger" aria-label="Not read" />
+                      )}
+                      <span className="min-w-0">
+                        <span className="font-medium">{c.label}</span> <span className="text-muted">— {c.detail}</span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <details className="mt-3">
+                  <summary className="cursor-pointer text-xs font-medium text-accent">See what a basic ATS reads</summary>
+                  <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded-lg bg-surface-2 p-3 font-mono text-[11px] leading-relaxed text-muted">{ats.text}</pre>
+                </details>
+              </>
+            ) : (
+              <p className="mt-3 text-[13px] text-subtle">The read-back test couldn't run in this browser.</p>
+            )}
+            <details className="mt-3 text-[13px] text-muted">
+              <summary className="cursor-pointer text-xs font-medium text-accent">What does the ATS score mean?</summary>
+              <p className="mt-2 leading-relaxed">
+                The <span className="font-medium text-fg">ATS formatting</span> score is a checklist: contact details present, an ATS-friendly single-column template with real text, readable font size and
+                margins, dates on every job, and a skills section. 100 means every check passed — it is <span className="font-medium text-fg">not</span> a score from a real ATS. There is no universal ATS
+                score: every employer's system (Workday, Greenhouse, Taleo, Lever…) reads CVs a little differently, and many also rank candidates by keywords, which Job Match estimates. The read-back
+                test above is a real test of your file's layout with a basic parser — if it reads everything correctly, your format is very unlikely to be the problem.
+              </p>
+            </details>
+          </div>
+
           {result.categories.length > 0 && (
             <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
               {result.categories.map((c) => (
-                <Bar key={c.name} label={c.name} value={c.score} note={`${c.score}`} />
+                <Bar key={c.name} label={c.name === "ATS" ? "ATS formatting (checklist)" : c.name} value={c.score} note={`${c.score}`} />
               ))}
             </div>
           )}

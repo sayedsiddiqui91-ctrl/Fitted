@@ -17,7 +17,7 @@ export const MODE_COPY: Record<OptimizeMode, string> = {
 
 export function ScoreExplainer() {
   return (
-    <Tip content="An estimate of how well your CV matches this job, combining required and preferred skills, experience, responsibilities, education, certifications, industry, keywords, CV structure and ATS readability. It is not the score of any specific applicant tracking system.">
+    <Tip content="An estimate of how well your CV matches this job, combining required and preferred skills, experience, responsibilities, education, certifications, industry, keywords, CV structure and ATS formatting checks (a checklist — not a score from any real ATS). It is not the score of any specific applicant tracking system; run Review My CV for an ATS read-back test of your file.">
       <button type="button" className="inline-flex items-center gap-1 text-xs text-subtle hover:text-fg" aria-label="How the score works">
         <Info className="size-3.5" aria-hidden /> Estimated
       </button>
@@ -153,7 +153,7 @@ export function AnalysisStep({
     ["Industry relevance", b.industry ?? null],
     ["Keyword coverage", b.keyword],
     ["CV structure", b.structure ?? null],
-    ["ATS readability", b.formatting],
+    ["ATS formatting checks", b.formatting],
   ];
   const reqs = (match.requirements ?? []).filter((r) => r.kind !== "responsibility");
   const resps = (match.requirements ?? []).filter((r) => r.kind === "responsibility");
