@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
-import { AlertTriangle, CheckCircle2, Eye, FileText, ListTree, Palette, PenLine } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ClipboardCheck, Eye, FileText, ListTree, Palette, PenLine } from "lucide-react";
 import type { CVContent, CVDoc, Design, Layout, TemplateId } from "@/lib/cv/schema";
 import { DEFAULT_DESIGN, newCV, TEMPLATE_DESIGN_DEFAULTS } from "@/lib/cv/defaults";
 import { TEMPLATES } from "@/lib/cv/meta";
@@ -11,6 +11,7 @@ import { clone, cn } from "@/lib/utils";
 import type { AssistantSelection } from "@/lib/ai/types";
 import { ContentPanel } from "@/components/editor/ContentPanel";
 import { AssistantSheet } from "@/components/editor/AssistantSheet";
+import { ReviewSheet } from "@/components/editor/ReviewSheet";
 import type { AskTarget } from "@/components/editor/SectionEditors";
 import { CVPreview } from "@/components/cv/CVPreview";
 import { OriginalPdf } from "@/components/app/OriginalPdf";
@@ -47,6 +48,7 @@ export function ImportReview({
   source,
   onSave,
   onCancel,
+  startWithReview,
 }: {
   initial: CVContent;
   initialLayout?: Layout;
@@ -62,6 +64,8 @@ export function ImportReview({
   source: string;
   onSave: (doc: Pick<CVDoc, "content" | "layout" | "design" | "name">) => void;
   onCancel: () => void;
+  /** Open Review My CV right away (the "Review My CV" entry point) */
+  startWithReview?: boolean;
 }) {
   const [doc, setDoc] = useState<CVDoc>(() =>
     newCV({ name: defaultName, content: clone(initial), ...(initialLayout ? { layout: clone(initialLayout) } : {}), ...(initialDesign ? { design: { ...initialDesign } } : {}) }),
@@ -75,10 +79,15 @@ export function ImportReview({
   // Assistant: "Improve with assistant" opens it pointed at that section/bullet (same as the main editor)
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [selection, setSelection] = useState<AssistantSelection>({ scope: "global", label: "Whole CV" });
+  const [autoPrompt, setAutoPrompt] = useState<{ id: number; text: string } | null>(null);
   const ask = useCallback((t: AskTarget) => {
     setSelection(t.bulletId ? { scope: "bullet", section: t.section, itemId: t.itemId, bulletId: t.bulletId, label: t.label } : { scope: "section", section: t.section, label: t.label });
+    setAutoPrompt({ id: Date.now(), text: t.bulletId ? "Improve this bullet" : t.section === "summary" ? "Improve my summary" : `Improve my ${t.label.toLowerCase()}` });
     setAssistantOpen(true);
   }, []);
+  // Review My CV (with "Fix it for me") — available right from the import
+  const [reviewOpen, setReviewOpen] = useState(!!startWithReview);
+  const [pages, setPages] = useState(1);
 
   const update = useCallback((recipe: (d: CVDoc) => void) => {
     setDoc((prev) => {
@@ -181,6 +190,9 @@ export function ImportReview({
               </Select>
             )}
           </Field>
+          <Button variant="secondary" icon={<ClipboardCheck className="size-4" />} onClick={() => setReviewOpen(true)}>
+            Review &amp; fix my CV
+          </Button>
           <div className="flex gap-2">
             <Button variant="ghost" onClick={onCancel}>
               Start over
@@ -227,12 +239,13 @@ export function ImportReview({
               </div>
             ) : null}
             <div className={cn(original && (view === "original" || side === "original") ? cn(view === "original" ? "hidden" : "block", side === "original" ? "lg:hidden" : "lg:block") : "block")}>
-              <CVPreview doc={doc} maxScale={0.95} />
+              <CVPreview doc={doc} maxScale={0.95} onPages={setPages} />
             </div>
           </div>
         </div>
       </div>
-      <AssistantSheet open={assistantOpen} onOpenChange={setAssistantOpen} doc={doc} update={update} selection={selection} setSelection={setSelection} job={null} />
+      <AssistantSheet open={assistantOpen} onOpenChange={setAssistantOpen} doc={doc} update={update} selection={selection} setSelection={setSelection} job={null} autoPrompt={autoPrompt} />
+      <ReviewSheet open={reviewOpen} onOpenChange={setReviewOpen} doc={doc} pages={pages} update={update} undoHint={false} onJump={() => setView("edit")} />
     </div>
   );
 }

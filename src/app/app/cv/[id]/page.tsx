@@ -94,6 +94,7 @@ function EditorInner({ doc }: { doc: CVDoc }) {
   const [reviewOpen, setReviewOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [selection, setSelection] = useState<AssistantSelection>({ scope: "global", label: "Whole CV" });
+  const [autoPrompt, setAutoPrompt] = useState<{ id: number; text: string } | null>(null);
   const sessions = useStore((s) => s.sessions);
   /* Job context for the assistant: the optimizer session for this CV (or its original), else the tailored version's saved job */
   const job = useMemo<AssistantJobContext | null>(() => {
@@ -126,6 +127,8 @@ function EditorInner({ doc }: { doc: CVDoc }) {
 
   const ask = useCallback((t: AskTarget) => {
     setSelection(t.bulletId ? { scope: "bullet", section: t.section, itemId: t.itemId, bulletId: t.bulletId, label: t.label } : { scope: "section", section: t.section, label: t.label });
+    // Offer a suggestion immediately; the user can still type their own instruction
+    setAutoPrompt({ id: Date.now(), text: t.bulletId ? "Improve this bullet" : t.section === "summary" ? "Improve my summary" : `Improve my ${t.label.toLowerCase()}` });
     setAssistantOpen(true);
   }, []);
 
@@ -223,13 +226,14 @@ function EditorInner({ doc }: { doc: CVDoc }) {
         onOpenChange={setReviewOpen}
         doc={doc}
         pages={pages}
+        update={update}
         onJump={(section) => {
           setTab("content");
           setView("edit");
           setFocusReq({ key: section, nonce: Date.now() });
         }}
       />
-      <AssistantSheet open={assistantOpen} onOpenChange={setAssistantOpen} doc={doc} update={update} selection={selection} setSelection={setSelection} job={job} />
+      <AssistantSheet open={assistantOpen} onOpenChange={setAssistantOpen} doc={doc} update={update} selection={selection} setSelection={setSelection} job={job} autoPrompt={autoPrompt} />
     </div>
   );
 }

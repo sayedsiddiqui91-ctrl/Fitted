@@ -2,7 +2,8 @@ import { suite, test, expect } from "./harness";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { CVDocument } from "../src/components/cv/CVDocument";
-import { DEFAULT_DESIGN, defaultLayout, newCustomItem, newCustomSection, sampleContent } from "../src/lib/cv/defaults";
+import { DEFAULT_DESIGN, defaultLayout, newBullet, newCustomItem, newCustomSection, sampleContent } from "../src/lib/cv/defaults";
+import { applyAutoFixes, planAutoFixes } from "../src/lib/engine/autoFix";
 import { analyzeJobDescription } from "../src/lib/engine/jobAnalysis";
 import { calculateJobMatch, identifyMissingKeywords } from "../src/lib/engine/match";
 import { generateOptimizationSuggestions } from "../src/lib/engine/optimize";
@@ -169,6 +170,49 @@ suite("Faithful import", () => {
     const runs = [h("EXPERIENCE"), h("EDUCATION"), h("SKILLS"), h("LEADERSHIP & IMPACT"), run({ text: "Managed a team of four", font: "Lato" }), run({ text: "KPMG", bold: true, fontSize: 10.5, font: "Lato-Bold" })];
     const mark = headingStyleMatcher(runs, isSectionHeading);
     expect(mark(runs[3]) && !mark(runs[4]) && !mark(runs[5]), runs.map((r) => `${r.text}:${mark(r)}`).join(" "));
+  });
+});
+
+// Requested: "Fix it for me" in Review My CV — smart, permission-based, never invents
+suite("Smart auto-fix (Review My CV)", () => {
+  const content = sampleContent();
+  content.experience[0].bullets.push(newBullet("Completed financila anaylis of vendor spend"));
+  const snapshot = JSON.stringify(content);
+  const plan = planAutoFixes(content, DEFAULT_DESIGN, 1);
+  const fixed = applyAutoFixes(content, plan.fixes);
+  const bulletTexts = (c: typeof content) => c.experience.flatMap((e) => e.bullets.map((b) => b.text));
+
+  test("fixes weak openers and typos", () => {
+    const t = bulletTexts(fixed);
+    expect(!t.some((x) => /^(Responsible for|Helped with|Worked on)/i.test(x)), t.join(" | "));
+    expect(t.some((x) => /financial analysis/i.test(x)), `typos not fixed: ${t.join(" | ")}`);
+  });
+  test("never adds or removes numbers in bullets", () => {
+    const nums = (list: string[]) => list.join(" ").match(/\d+/g)?.sort().join(",") ?? "";
+    expect(nums(bulletTexts(content)) === nums(bulletTexts(fixed)), `${nums(bulletTexts(content))} vs ${nums(bulletTexts(fixed))}`);
+  });
+  test("estimated score goes up; big changes are opt-in", () => {
+    expect(plan.scoreAfter > plan.scoreBefore, `${plan.scoreBefore} → ${plan.scoreAfter}`);
+    const rewrite = plan.fixes.find((f) => f.kind === "summary" && /Replaces|Adds/.test(f.reason));
+    expect(!rewrite || rewrite.optional === true, "a full summary rewrite must be opt-in");
+  });
+  test("a misspelt bullet is fixed even when the correct words appear nowhere else in the CV", () => {
+    const c = sampleContent();
+    c.summary = "";
+    c.skills = [];
+    c.projects = [];
+    c.experience = [c.experience[0]];
+    c.experience[0].bullets = [newBullet("Completed financila anaylis of vendor spend.")];
+    const p = planAutoFixes(c, DEFAULT_DESIGN, 1);
+    const f = p.fixes.find((x) => x.kind === "bullet");
+    expect(f && /financial analysis/.test(f.after), JSON.stringify(p.fixes.map((x) => x.after)));
+  });
+  test("planning and applying never change the original until the user applies", () => {
+    expect(JSON.stringify(content) === snapshot, "original content was mutated");
+  });
+  test("assistant adds the user's own words to the summary", () => {
+    const r = localAssistant([{ role: "user", content: "mention IFRS" }], { content: sampleContent(), selection: { scope: "section", section: "summary" }, job: null, design: DEFAULT_DESIGN });
+    expect(r.actions.some((a) => a.type === "replace_summary" && /IFRS/.test(a.newText)), JSON.stringify(r.actions.map((a) => a.newText)));
   });
 });
 

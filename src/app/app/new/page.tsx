@@ -232,6 +232,7 @@ const STEPS = ["Reading your file", "Extracting text and design", "Finding secti
 
 function ImportFlow() {
   const router = useRouter();
+  const reviewFirst = useSearchParams().get("review") === "1";
   const createCV = useStore((s) => s.createCV);
   const [tab, setTab] = useState<"file" | "paste">("file");
   const [stage, setStage] = useState<Stage>("idle");
@@ -304,6 +305,7 @@ function ImportFlow() {
         sourceText={result.sourceText}
         sections={result.sections}
         originalPdf={result.originalPdf ?? undefined}
+        startWithReview={reviewFirst}
         warnings={result.warnings}
         defaultName={defaultName}
         source="a file"
@@ -320,8 +322,12 @@ function ImportFlow() {
   const busy = stage === "reading" || stage === "structuring";
   return (
     <div className="max-w-2xl">
-      <h1 className="text-2xl font-semibold tracking-tight">Import your existing CV</h1>
-      <p className="mb-6 mt-1.5 text-muted">Upload a PDF, DOCX or TXT file. We'll extract your details into the builder so you can edit everything.</p>
+      <h1 className="text-2xl font-semibold tracking-tight">{reviewFirst ? "Review my CV" : "Import your existing CV"}</h1>
+      <p className="mb-6 mt-1.5 text-muted">
+        {reviewFirst
+          ? "Upload your CV (PDF, DOCX or TXT). You'll get a quality score, clear feedback and smart fixes you can apply with one click — your original stays untouched."
+          : "Upload a PDF, DOCX or TXT file. We'll extract your details into the builder so you can edit everything."}
+      </p>
       <Segmented
         label="Import method"
         value={tab}

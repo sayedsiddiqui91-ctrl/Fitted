@@ -1,23 +1,47 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "motion/react";
-import { AlertCircle, AlertTriangle, ArrowRight, CheckCircle2, ClipboardCheck, Cpu, Loader2, RefreshCw, Sparkles } from "lucide-react";
+import { toast } from "sonner";
+import { AlertCircle, AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, ClipboardCheck, Cpu, Hand, Loader2, RefreshCw, Sparkles, Wand2 } from "lucide-react";
 import type { CVDoc } from "@/lib/cv/schema";
 import type { EngineKind, ReviewItem, ReviewResult } from "@/lib/ai/types";
 import { reviewMyCV, withMinDuration } from "@/lib/ai/client";
+import { applyAutoFixes, planAutoFixes, scoreWithFixes } from "@/lib/engine/autoFix";
 import { Sheet } from "@/components/ui/Sheet";
 import { Bar, ScoreRing } from "@/components/ui/misc";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
+import type { Update } from "./SectionEditors";
 
 const STEPS = ["Checking clarity and tone", "Reviewing bullet quality", "Checking ATS compatibility", "Scoring your CV"];
 
-export function ReviewSheet({ open, onOpenChange, doc, pages, onJump }: { open: boolean; onOpenChange: (o: boolean) => void; doc: CVDoc; pages: number; onJump: (section: string) => void }) {
+export function ReviewSheet({
+  open,
+  onOpenChange,
+  doc,
+  pages,
+  onJump,
+  update,
+  undoHint = true,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  doc: CVDoc;
+  pages: number;
+  onJump: (section: string) => void;
+  /** When provided, "Fix it for me" can apply smart fixes (with the user's permission) */
+  update?: Update;
+  /** Whether Ctrl+Z can undo applied fixes here (true in the editor) */
+  undoHint?: boolean;
+}) {
   const [result, setResult] = useState<ReviewResult | null>(null);
   const [engine, setEngine] = useState<EngineKind>("local");
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState(0);
+  const [fixMode, setFixMode] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [rerun, setRerun] = useState(false);
 
   const run = async () => {
     setLoading(true);
@@ -34,9 +58,35 @@ export function ReviewSheet({ open, onOpenChange, doc, pages, onJump }: { open: 
   };
 
   useEffect(() => {
-    if (open) void run();
+    if (open) {
+      setFixMode(false);
+      void run();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // Re-score after fixes were applied (runs once the updated CV has arrived)
+  useEffect(() => {
+    if (!rerun) return;
+    setRerun(false);
+    void run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc.content]);
+
+  const plan = useMemo(() => (update && result ? planAutoFixes(doc.content, doc.design, pages) : null), [update, result, doc.content, doc.design, pages]);
+  useEffect(() => {
+    if (plan) setSelected(new Set(plan.fixes.filter((f) => !f.optional).map((f) => f.id)));
+  }, [plan]);
+  const chosen = plan ? plan.fixes.filter((f) => selected.has(f.id)) : [];
+  const estimate = useMemo(() => (plan ? scoreWithFixes(doc.content, doc.design, pages, chosen) : 0), [plan, chosen, doc.content, doc.design, pages]);
+
+  const applyFixes = () => {
+    if (!update || !chosen.length) return;
+    update((d) => void (d.content = applyAutoFixes(d.content, chosen)));
+    toast.success(`Applied ${chosen.length} fix${chosen.length === 1 ? "" : "es"}`, { description: undoHint ? "Undo any time with Ctrl+Z." : "You can still edit everything before saving." });
+    setFixMode(false);
+    setRerun(true);
+  };
 
   const groups: { title: string; sev: ReviewItem["severity"] }[] = [
     { title: "Fix these", sev: "issue" },
@@ -58,6 +108,77 @@ export function ReviewSheet({ open, onOpenChange, doc, pages, onJump }: { open: 
             ))}
           </ol>
         </div>
+      ) : fixMode && plan ? (
+        /* ── Smart fixes: preview, choose, apply ── */
+        <div className="flex flex-col p-5 pb-28">
+          <button type="button" onClick={() => setFixMode(false)} className="mb-3 inline-flex items-center gap-1 self-start text-sm text-muted hover:text-fg">
+            <ArrowLeft className="size-4" aria-hidden /> Back to review
+          </button>
+          <h3 className="flex items-center gap-2 text-lg font-semibold tracking-tight">
+            <Wand2 className="size-5 text-accent" aria-hidden /> Smart fixes
+          </h3>
+          <p className="mt-1 text-sm text-muted">
+            Choose what to apply. Estimated score <span className="font-semibold text-fg">{plan.scoreBefore}</span> → <span className="font-semibold text-success">{estimate}</span>. Only safe changes — wording, tense, spelling and consistency. Nothing is invented.
+          </p>
+          <p className="mt-3 flex items-start gap-2 rounded-xl bg-surface-2 px-3 py-2.5 text-[13px] text-muted">
+            <Hand className="mt-0.5 size-4 shrink-0 text-accent" aria-hidden />
+            <span>You can also make these changes yourself. For the most hand-crafted feel, we recommend editing manually in the main editor — use these as suggestions and adjust the wording so it sounds like you.</span>
+          </p>
+          <div className="mt-4 flex items-center justify-between text-xs">
+            <span className="text-subtle">
+              {chosen.length} of {plan.fixes.length} selected
+            </span>
+            <span className="flex gap-3">
+              <button type="button" className="font-medium text-accent hover:underline" onClick={() => setSelected(new Set(plan.fixes.map((f) => f.id)))}>
+                Select all
+              </button>
+              <button type="button" className="font-medium text-muted hover:underline" onClick={() => setSelected(new Set())}>
+                Clear
+              </button>
+            </span>
+          </div>
+          <ul className="mt-2 flex flex-col gap-2">
+            {plan.fixes.map((f) => {
+              const on = selected.has(f.id);
+              return (
+                <li key={f.id}>
+                  <label className={cn("flex cursor-pointer gap-3 rounded-xl border p-3.5 transition-colors", on ? "border-accent/50 bg-accent-soft/30" : "border-border bg-surface hover:bg-surface-2")}>
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      onChange={() =>
+                        setSelected((s) => {
+                          const next = new Set(s);
+                          if (next.has(f.id)) next.delete(f.id);
+                          else next.add(f.id);
+                          return next;
+                        })
+                      }
+                      className="mt-1 size-4 shrink-0 accent-[var(--accent)]"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex flex-wrap items-center gap-x-2 text-[13px] font-semibold">
+                        {f.where}
+                        {f.optional && <span className="rounded-md bg-warning-soft px-1.5 py-0.5 text-[11px] font-medium text-warning">Bigger change — review it</span>}
+                      </span>
+                      <span className="mt-0.5 block text-xs text-subtle">{f.reason}</span>
+                      <span className="mt-2 block text-[13px] leading-relaxed text-muted line-through decoration-danger/50 line-clamp-3">{f.before}</span>
+                      <span className="mt-1 block text-[13px] leading-relaxed text-fg">{f.after}</span>
+                    </span>
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
+          <div className="fixed inset-x-0 bottom-0 flex gap-2 border-t border-border bg-surface/95 p-4 backdrop-blur-md sm:absolute">
+            <Button variant="ghost" onClick={() => setFixMode(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" className="flex-1" icon={<Wand2 className="size-4" />} disabled={!chosen.length} onClick={applyFixes}>
+              Apply {chosen.length} fix{chosen.length === 1 ? "" : "es"}
+            </Button>
+          </div>
+        </div>
       ) : (
         <div className="p-5">
           <div className="flex items-center gap-5 rounded-2xl border border-border bg-surface-2/50 p-4">
@@ -73,6 +194,23 @@ export function ReviewSheet({ open, onOpenChange, doc, pages, onJump }: { open: 
               </p>
             </div>
           </div>
+
+          {plan && plan.fixes.length > 0 && (
+            <div className="mt-4 rounded-2xl border border-accent/30 bg-accent-soft/40 p-4">
+              <p className="flex items-center gap-2 text-sm font-semibold">
+                <Wand2 className="size-4 text-accent" aria-hidden /> {plan.fixes.length} smart fix{plan.fixes.length === 1 ? "" : "es"} available
+              </p>
+              <p className="mt-1 text-[13px] text-muted">
+                Estimated score {plan.scoreBefore} → <span className="font-semibold text-success">{plan.scoreAfter}</span>. You'll see every change before anything is applied. Items that need your own information (like real numbers) stay in the list below.
+              </p>
+              <Button className="mt-3" variant="primary" size="sm" icon={<Wand2 className="size-4" />} onClick={() => setFixMode(true)}>
+                Fix it for me
+              </Button>
+            </div>
+          )}
+          {plan && plan.fixes.length === 0 && (
+            <p className="mt-4 rounded-xl bg-surface-2 px-3 py-2.5 text-[13px] text-muted">No automatic fixes needed — anything left below needs your own input.</p>
+          )}
 
           {result.categories.length > 0 && (
             <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -90,13 +228,7 @@ export function ReviewSheet({ open, onOpenChange, doc, pages, onJump }: { open: 
                 <h3 className="mb-2 text-[13px] font-semibold uppercase tracking-wide text-subtle">{g.title}</h3>
                 <ul className="flex flex-col gap-2">
                   {items.map((it, i) => (
-                    <motion.li
-                      key={it.id}
-                      initial={{ opacity: 0, y: 6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: i * 0.03 }}
-                      className="rounded-xl border border-border bg-surface p-3.5"
-                    >
+                    <motion.li key={it.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }} className="rounded-xl border border-border bg-surface p-3.5">
                       <div className="flex gap-3">
                         {it.severity === "good" ? (
                           <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" aria-label="Strength" />

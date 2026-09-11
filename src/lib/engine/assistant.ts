@@ -251,6 +251,45 @@ export function localAssistant(history: ChatMessage[], input: AssistantInput): C
     return finalize("Add a position in the Experience section first, then I can turn that into a bullet for it.");
   }
 
+  /* The user's own words: "mention IFRS", "add month-end close", "include ‘using SAP’ in this bullet" */
+  const custom = last.match(/^(?:please\s+)?(?:add|mention|include|insert)\s+(?:the\s+)?(?:(?:word|keyword|term|phrase|skill)s?\s+)?["“']?([^"”']+?)["”']?(?:\s+(?:in|into|to|on)\s+(?:my|the|this)\s+(summary|profile|bullet|cv|resume))?\s*[.!]?$/i);
+  if (
+    custom &&
+    !/^(that|i|we|my|a|an|more|some)\b/i.test(custom[1]) &&
+    !/\b(bullet|summary|section|title|sentence|line|numbers?|metrics?|details?|dates?|keywords?)\b/i.test(custom[1]) &&
+    custom[1].split(/\s+/).length <= 8
+  ) {
+    const phrase = custom[1].trim().replace(/[.]+$/, "");
+    const dest = (custom[2] ?? "").toLowerCase();
+    const short = phrase.split(/\s+/).length <= 4;
+    const hasSkill = content.skills.some((k) => k.name.toLowerCase() === phrase.toLowerCase());
+    if (target.kind === "bullet" && dest !== "summary" && dest !== "profile") {
+      const b = target.ref;
+      if (/^(using|with|in|for|by|across|through|via|on)\b/i.test(phrase)) {
+        const newText = `${b.text.replace(/[.\s]+$/, "")} ${phrase}${/\.\s*$/.test(b.text) ? "." : ""}`;
+        return finalize("Here's the bullet with your words added — only apply it if it's accurate:", [action({ type: "update_bullet", section: b.section, itemId: b.itemId, bulletId: b.bulletId, newText, label: bulletLabel(b, facts) })], ["Make it shorter"]);
+      }
+      return finalize(
+        `Where should “${phrase}” go in this bullet? Tell me the exact words, e.g. “add ‘using ${phrase}’”.${short && !hasSkill ? " I can also add it to your skills:" : ""}`,
+        short && !hasSkill ? [action({ type: "add_skill", newText: phrase })] : [],
+      );
+    }
+    // Summary: extend the "Proficient / Skilled in …" list, or add the words as their own sentence
+    const s = content.summary.trim();
+    const list = s.match(/\b(Proficient|Skilled|Experienced) in ([^.]+)\./i);
+    const end = s && !/[.!?]$/.test(s) ? `${s}.` : s;
+    let next: string;
+    if (short && list) {
+      const items = list[2].split(/,\s*|\s+and\s+/).map((x) => x.trim()).filter(Boolean);
+      if (items.some((x) => x.toLowerCase() === phrase.toLowerCase())) return finalize(`Your summary already mentions “${phrase}”.`);
+      next = s.replace(list[0], `${list[1]} in ${joinList([...items, phrase])}.`);
+    } else if (short) next = `${end}${end ? " " : ""}Skilled in ${phrase}.`;
+    else next = `${end}${end ? " " : ""}${phrase.charAt(0).toUpperCase()}${phrase.slice(1)}.`;
+    const acts = [action({ type: "replace_summary", newText: next, label: "Summary — with your words" })];
+    if (short && !hasSkill) acts.push(action({ type: "add_skill", newText: phrase }));
+    return finalize(`Here's your summary with “${phrase}” added${acts.length > 1 ? " — I can add it to your skills too" : ""}. Only apply it if it's true for you.`, acts, ["Make it shorter"]);
+  }
+
   /* Three versions of the summary */
   if (/\b(three|3|several|multiple|some|few)\b.*\b(versions?|options?|variations?|alternatives?|drafts?)\b|\b(versions?|options?|variations?)\b.*\bsummary\b/.test(lower) && (target.kind === "summary" || /summary|profile/.test(lower))) {
     const vars = summaryVariants(content, facts, input.job);

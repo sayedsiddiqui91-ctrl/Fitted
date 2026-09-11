@@ -153,3 +153,23 @@ export const COMMON_MISSPELLINGS: Record<string, string> = {
   accouting: "accounting",
   reconcilation: "reconciliation",
 };
+
+// More typos seen in real CVs (merged, so an existing key is never duplicated)
+Object.assign(COMMON_MISSPELLINGS, {
+  porcessing: "processing",
+  proccessing: "processing",
+  financila: "financial",
+  anaylis: "analysis",
+  anaylsis: "analysis",
+  analysys: "analysis",
+  analyis: "analysis",
+  managemnt: "management",
+  experiance: "experience",
+  responsibilites: "responsibilities",
+  coordiantion: "coordination",
+  stakholder: "stakeholder",
+  stakeholdr: "stakeholder",
+  comunication: "communication",
+  enviroment: "environment",
+  documention: "documentation",
+});

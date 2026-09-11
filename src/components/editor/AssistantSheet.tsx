@@ -27,6 +27,7 @@ export function AssistantSheet({
   selection,
   setSelection,
   job,
+  autoPrompt,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
@@ -35,6 +36,8 @@ export function AssistantSheet({
   selection: AssistantSelection;
   setSelection: (s: AssistantSelection) => void;
   job: AssistantJobContext | null;
+  /** Sent automatically when it changes (e.g. "Improve my summary" from an "Improve with assistant" button) */
+  autoPrompt?: { id: number; text: string } | null;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -108,6 +111,15 @@ export function AssistantSheet({
     }
   };
 
+  // "Improve with assistant" → offer a suggestion right away for the section/bullet that was clicked
+  const lastAuto = useRef<number | null>(null);
+  useEffect(() => {
+    if (!open || !autoPrompt || lastAuto.current === autoPrompt.id) return;
+    lastAuto.current = autoPrompt.id;
+    void send(autoPrompt.text);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, autoPrompt?.id, keyOf(selection)]);
+
   const retryLast = () => {
     const lastUser = [...messages].reverse().find((m) => m.role === "user");
     if (!lastUser) return;
@@ -158,7 +170,7 @@ export function AssistantSheet({
               }
             }}
             rows={1}
-            placeholder={current.sel.scope === "global" ? "Ask about your CV…" : `Ask about ${current.sel.label}…`}
+            placeholder={current.sel.scope === "global" ? "Ask anything, or tell me what to add — e.g. “mention IFRS”" : `Tell me what to change in ${current.sel.label} — e.g. “make it shorter”, “mention SAP”`}
             aria-label="Message the assistant"
             className="max-h-32 min-h-11 flex-1 resize-none rounded-xl border border-border bg-surface px-3 py-2.5 text-[15px] focus:border-accent focus:outline-none focus:ring-3 focus:ring-accent/15 sm:text-sm"
           />
