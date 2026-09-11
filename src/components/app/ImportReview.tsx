@@ -8,7 +8,10 @@ import { DEFAULT_DESIGN, newCV, TEMPLATE_DESIGN_DEFAULTS } from "@/lib/cv/defaul
 import { TEMPLATES } from "@/lib/cv/meta";
 import { parseResumeText, type ParsedSection, type SectionKind } from "@/lib/engine/parseResume";
 import { clone, cn } from "@/lib/utils";
+import type { AssistantSelection } from "@/lib/ai/types";
 import { ContentPanel } from "@/components/editor/ContentPanel";
+import { AssistantSheet } from "@/components/editor/AssistantSheet";
+import type { AskTarget } from "@/components/editor/SectionEditors";
 import { CVPreview } from "@/components/cv/CVPreview";
 import { OriginalPdf } from "@/components/app/OriginalPdf";
 import { Button } from "@/components/ui/Button";
@@ -69,6 +72,13 @@ export function ImportReview({
   const [sections, setSections] = useState<ParsedSection[]>(initialSections ?? []);
   const [overrides, setOverrides] = useState<Record<string, SectionKind>>({});
   const [original] = useState(() => (originalPdf ? originalPdf.slice() : null));
+  // Assistant: "Improve with assistant" opens it pointed at that section/bullet (same as the main editor)
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [selection, setSelection] = useState<AssistantSelection>({ scope: "global", label: "Whole CV" });
+  const ask = useCallback((t: AskTarget) => {
+    setSelection(t.bulletId ? { scope: "bullet", section: t.section, itemId: t.itemId, bulletId: t.bulletId, label: t.label } : { scope: "section", section: t.section, label: t.label });
+    setAssistantOpen(true);
+  }, []);
 
   const update = useCallback((recipe: (d: CVDoc) => void) => {
     setDoc((prev) => {
@@ -195,7 +205,7 @@ export function ImportReview({
       />
       <div className="grid gap-5 lg:grid-cols-[minmax(380px,1fr)_minmax(0,1fr)]">
         <div className={cn(view === "edit" ? "block" : "hidden", "min-w-0 lg:block")}>
-          <ContentPanel doc={doc} update={update} onAsk={() => undefined} defaultOpen={["personal", "summary", "experience", "education", "skills"]} />
+          <ContentPanel doc={doc} update={update} onAsk={ask} onFocusTarget={setSelection} defaultOpen={["personal", "summary", "experience", "education", "skills"]} />
         </div>
         <div className={cn(view === "edit" ? "hidden" : "block", "min-w-0 lg:block")}>
           <div className="rounded-2xl bg-surface-2/70 p-3 lg:sticky lg:top-4">
@@ -222,6 +232,7 @@ export function ImportReview({
           </div>
         </div>
       </div>
+      <AssistantSheet open={assistantOpen} onOpenChange={setAssistantOpen} doc={doc} update={update} selection={selection} setSelection={setSelection} job={null} />
     </div>
   );
 }
