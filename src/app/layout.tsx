@@ -28,8 +28,8 @@ export const metadata: Metadata = {
     description: "Free CV builder + job optimizer. Honest AI that never invents experience.",
   },
   robots: { index: true, follow: true },
-  // Google Search Console "HTML tag" verification — set GOOGLE_SITE_VERIFICATION in Vercel
-  ...(process.env.GOOGLE_SITE_VERIFICATION ? { verification: { google: process.env.GOOGLE_SITE_VERIFICATION } } : {}),
+  // Google Search Console "HTML tag" verification (public by design). GOOGLE_SITE_VERIFICATION overrides it.
+  verification: { google: process.env.GOOGLE_SITE_VERIFICATION || "5yn1o_v_V1CdfwGZIK3kbQSgb-EsOXLEZOi_40S0P1E" },
 };
 
 // Structured data so search engines understand Fitted is a free web app

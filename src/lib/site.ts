@@ -3,7 +3,7 @@
     automatically) → the current Vercel URL. */
 const fromVercel = process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "";
 
-export const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || fromVercel || "https://fitted-eight.vercel.app").replace(/\/$/, "");
+export const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || fromVercel || "https://fitted-cv.vercel.app").replace(/\/$/, "");
 
 export const SITE_NAME = "Fitted";
 export const SITE_TAGLINE = "Build a better CV. Tailored to every job.";
