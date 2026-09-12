@@ -21,6 +21,7 @@ import type { PdfTextRun } from "../src/lib/pdf/types";
 import { analyzeCV } from "../src/lib/engine/cvAnalysis";
 import { parseResumeText } from "../src/lib/engine/parseResume";
 import { looksLikeAddress } from "../src/lib/engine/personalInfo";
+import { buildRuns } from "../src/lib/pdf/runs";
 
 // Found during in-browser end-to-end testing
 const JD = `Senior Finance Analyst
@@ -482,6 +483,58 @@ suite("Free to run: paid AI can't switch itself on", () => {
   test("local development still works with just a key", () => {
     expect(claudeAllowed({ ANTHROPIC_API_KEY: KEY, NODE_ENV: "development" }), "npm run dev with a key should use Claude");
     expect(!claudeAllowed({ NODE_ENV: "development" }), "no key, no paid AI");
+  });
+});
+
+suite("Import: PDFs that report the wrong glyph widths", () => {
+  /* Some CV generators embed subset fonts with missing or default widths. Every piece of text is then
+     reported far wider than it is drawn, so the gap between two words measures as zero or negative and
+     the words run together ("SMAC Advisory Ltd" → "SMACAdvisoryLtd"). Item positions stay correct. */
+  const SIZE = 10;
+  const REAL = 5.1; // what a character is actually drawn at
+  const LIED = 9.4; // what the PDF claims a character is
+
+  function itemsFor(words: string[], y: number, startX = 50) {
+    let x = startX;
+    return words.map((str) => {
+      const it = { str, transform: [SIZE, 0, 0, SIZE, x, y], width: str.length * LIED, height: SIZE, fontName: "g_d0_f1" };
+      x += str.length * REAL + REAL; // advance, plus the space that follows
+      return it;
+    });
+  }
+
+  test("words separated only by position still come back with their spaces", () => {
+    const items = [...itemsFor(["SMAC", "Advisory", "Ltd", "(Snehasish", "Mahmud", "&", "Co.)"], 700), ...itemsFor(["Bachelor", "of", "Business", "Administration", "(BBA)"], 680)];
+    const runs = buildRuns(items, 0, () => ({}));
+    const text = runs.map((r) => r.text).join(" | ");
+    expect(text.includes("SMAC Advisory Ltd (Snehasish Mahmud & Co.)"), `company came back as: ${text}`);
+    expect(text.includes("Bachelor of Business Administration (BBA)"), `degree came back as: ${text}`);
+  });
+
+  test("a right-aligned date is still its own run, not glued to the job title", () => {
+    const items = [...itemsFor(["Executive", "Accountant"], 660), ...itemsFor(["01/2026", "–", "Present"], 660, 470)];
+    const runs = buildRuns(items, 0, () => ({}));
+    expect(runs.length === 2, `expected the title and the date to stay apart, got ${JSON.stringify(runs.map((r) => r.text))}`);
+    expect(runs[0].text === "Executive Accountant", `title: “${runs[0].text}”`);
+  });
+
+  test("a space the PDF spells out is honoured even when the gap measures zero", () => {
+    const items = [
+      { str: "North", transform: [SIZE, 0, 0, SIZE, 50, 640], width: 5 * LIED, height: SIZE, fontName: "f1" },
+      { str: " ", transform: [SIZE, 0, 0, SIZE, 75, 640], width: LIED, height: SIZE, fontName: "f1" },
+      { str: "South", transform: [SIZE, 0, 0, SIZE, 78, 640], width: 5 * LIED, height: SIZE, fontName: "f1" },
+    ];
+    expect(buildRuns(items, 0, () => ({}))[0].text === "North South", `got “${buildRuns(items, 0, () => ({}))[0].text}”`);
+  });
+
+  test("a PDF with honest widths is unchanged — no spaces invented inside words", () => {
+    let x = 50;
+    const items = ["Power", "Point", "2024"].map((str) => {
+      const it = { str, transform: [SIZE, 0, 0, SIZE, x, 620], width: str.length * REAL, height: SIZE, fontName: "f1" };
+      x += str.length * REAL; // no space between them at all
+      return it;
+    });
+    expect(buildRuns(items, 0, () => ({}))[0].text === "PowerPoint2024", `got “${buildRuns(items, 0, () => ({}))[0].text}”`);
   });
 });
 

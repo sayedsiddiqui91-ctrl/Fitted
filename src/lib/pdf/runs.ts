@@ -28,12 +28,60 @@ export function classifyFont(info: FontInfo): { bold: boolean; italic: boolean; 
   return { bold, italic, family: mono ? "mono" : serif ? "serif" : "sans" };
 }
 
+const median = (xs: number[]): number => {
+  if (!xs.length) return 0;
+  const s = [...xs].sort((a, b) => a - b);
+  return s[Math.floor(s.length / 2)];
+};
+
+/** Average character width and space width, in ems, measured from where the PDF puts each piece of text. */
+export interface Advance {
+  /** width of one character, as a fraction of the font size */
+  char: number;
+  /** width of a space, as a fraction of the font size */
+  space: number;
+}
+
+/* Some PDFs (subset fonts with missing or default glyph widths) report every piece of text as far wider
+   than it is drawn. The gap between two words then measures as zero or negative and they run together —
+   that is how "SMAC Advisory Ltd" became "SMACAdvisoryLtd". Item positions are always right, so we fit
+   `advance = char × letters + space` across the page: the intercept IS the width of a space. */
+export function fitAdvance(lines: { str: string; x: number; size: number }[][]): Advance | null {
+  const pts: [number, number][] = [];
+  for (const line of lines) {
+    for (let i = 0; i + 1 < line.length; i++) {
+      const [a, b] = [line[i], line[i + 1]];
+      const adv = (b.x - a.x) / a.size;
+      // Skip column jumps and anything a line of text can't be: at most one em per letter, plus a space
+      if (adv > 0.05 && adv < a.str.length + 1) pts.push([a.str.length, adv]);
+    }
+  }
+  if (pts.length < 2) return null;
+  const n = pts.length;
+  const sx = pts.reduce((t, [l]) => t + l, 0);
+  const sy = pts.reduce((t, [, a]) => t + a, 0);
+  const den = n * pts.reduce((t, [l]) => t + l * l, 0) - sx * sx;
+  if (!den) return null; // every word the same length — nothing to separate
+  const char = (n * pts.reduce((t, [l, a]) => t + l * a, 0) - sx * sy) / den;
+  const space = (sy - char * sx) / n;
+  return char > 0.2 && char < 1.2 && space > 0.08 && space < 0.6 ? { char, space } : null;
+}
+
 export function buildRuns(items: RawTextItem[], page: number, fontInfo: (fontName: string) => FontInfo): PdfTextRun[] {
-  type It = RawTextItem & { x: number; y: number; size: number };
-  const list: It[] = items
-    .filter((it) => it.str && it.str.trim() && it.transform?.length >= 6)
-    .map((it) => ({ ...it, x: it.transform[4], y: it.transform[5], size: Math.hypot(it.transform[2], it.transform[3]) || it.height || 10 }))
-    .filter((it) => Math.abs(it.transform[1]) < 0.01); // horizontal text only (rotated text isn't quick-editable)
+  type It = RawTextItem & { x: number; y: number; size: number; spaceBefore?: boolean };
+  // A whitespace-only item is the PDF saying "there is a space here" — remember it instead of dropping it
+  let pendingSpace = false;
+  const list: It[] = [];
+  for (const it of items) {
+    if (!it.str || !it.transform || it.transform.length < 6) continue;
+    if (!it.str.trim()) {
+      pendingSpace = true;
+      continue;
+    }
+    if (Math.abs(it.transform[1]) >= 0.01) continue; // horizontal text only (rotated text isn't quick-editable)
+    list.push({ ...it, x: it.transform[4], y: it.transform[5], size: Math.hypot(it.transform[2], it.transform[3]) || it.height || 10, spaceBefore: pendingSpace });
+    pendingSpace = false;
+  }
 
   // group into lines
   list.sort((a, b) => b.y - a.y || a.x - b.x);
@@ -44,10 +92,26 @@ export function buildRuns(items: RawTextItem[], page: number, fontInfo: (fontNam
     else lines.push([it]);
   }
 
+  for (const line of lines) line.sort((a, b) => a.x - b.x);
+  // Measured once per page, so even a two-word line benefits from the rest of the page's spacing
+  const fit = fitAdvance(lines);
+  // If pieces of text are reported as overlapping each other, this PDF's widths are wrong everywhere,
+  // not just where they overlap — so the whole page is measured from positions instead.
+  let boundaries = 0;
+  let overlaps = 0;
+  for (const line of lines) {
+    for (let i = 0; i + 1 < line.length; i++) {
+      boundaries++;
+      if (line[i + 1].x - (line[i].x + line[i].width) < -0.5) overlaps++;
+    }
+  }
+  const trustWidths = !fit || overlaps < boundaries * 0.15;
+  /** The gap before `it` — from the PDF's own widths when they hold up, from positions when they don't. */
+  const realGap = (prev: It, it: It): number => (trustWidths ? it.x - (prev.x + prev.width) : it.x - prev.x - fit!.char * prev.str.length * prev.size);
+
   const runs: PdfTextRun[] = [];
   let k = 0;
   for (const line of lines) {
-    line.sort((a, b) => a.x - b.x);
     let cur: It[] = [];
     const flush = () => {
       if (!cur.length) return;
@@ -57,8 +121,8 @@ export function buildRuns(items: RawTextItem[], page: number, fontInfo: (fontNam
       cur.forEach((it, idx) => {
         if (idx > 0) {
           const prev = cur[idx - 1];
-          const gap = it.x - (prev.x + prev.width);
-          if (gap > it.size * 0.18 && !text.endsWith(" ") && !it.str.startsWith(" ")) text += " ";
+          const space = realGap(prev, it) > (fit ? Math.min(it.size * 0.18, fit.space * it.size * 0.5) : it.size * 0.18);
+          if ((space || it.spaceBefore) && !text.endsWith(" ") && !it.str.startsWith(" ")) text += " ";
         }
         text += it.str;
       });
@@ -80,9 +144,8 @@ export function buildRuns(items: RawTextItem[], page: number, fontInfo: (fontNam
     for (const it of line) {
       const prev = cur[cur.length - 1];
       if (prev) {
-        const gap = it.x - (prev.x + prev.width);
         const differentStyle = Math.abs(prev.size - it.size) > prev.size * 0.25;
-        if (gap > Math.max(prev.size * 1.6, 14) || differentStyle) flush();
+        if (realGap(prev, it) > Math.max(prev.size * 1.6, 14) || differentStyle) flush();
       }
       cur.push(it);
     }
