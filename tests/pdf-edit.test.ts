@@ -100,4 +100,37 @@ suite("Quick PDF edit", () => {
     const after = await extract(res.bytes);
     expect(!after.text.includes("Remove this line") && after.text.includes("Keep this line") && after.text.includes("Open to relocation"), after.text);
   });
+
+  test("closing the gap after a deletion moves the lines below up without overlapping", async () => {
+    const d = await PDFDocument.create();
+    const p = d.addPage([595, 842]);
+    const f = await d.embedFont(StandardFonts.Helvetica);
+    const ys = [700, 680, 660, 640, 620];
+    const texts = ["First line here", "Second line here", "Third line goes away", "Fourth line here", "Fifth line here"];
+    texts.forEach((t, i) => p.drawText(t, { x: 50, y: ys[i], size: 11, font: f }));
+    const original = new Uint8Array(await d.save());
+    const before = await extract(original);
+    const gone = before.runs.find((r) => r.text === "Third line goes away")!;
+    const shift = 20; // one line height
+
+    // What the "Close the gap" button builds: delete one line, move everything below it up by one line
+    const edits: PdfEdit[] = [editFor(gone, "delete", "")];
+    for (const r of before.runs) if (r.y < gone.y - 1) edits.push({ ...editFor(r, "replace", r.text), y: r.y + shift });
+    const after = await extract((await applyPdfEdits(original, edits)).bytes);
+
+    expect(!after.text.includes("Third line goes away"), `deleted line is still there: ${after.text}`);
+    for (const t of ["First line here", "Second line here", "Fourth line here", "Fifth line here"]) {
+      expect(after.text.includes(t), `“${t}” was lost: ${after.text}`);
+    }
+    // Every line sits on its own baseline — nothing was drawn on top of anything else
+    const lines = new Map<number, string[]>();
+    for (const r of after.runs) {
+      const key = Math.round(r.y);
+      lines.set(key, [...(lines.get(key) ?? []), r.text.trim()]);
+    }
+    const doubled = [...lines.entries()].filter(([, v]) => v.filter(Boolean).length > 1);
+    expect(!doubled.length, `two lines ended up on the same baseline: ${JSON.stringify(doubled)}`);
+    const order = [...lines.entries()].sort((a, b) => b[0] - a[0]).map(([, v]) => v.join(""));
+    expect(order.join(" | ") === "First line here | Second line here | Fourth line here | Fifth line here", `order was: ${order.join(" | ")}`);
+  });
 });

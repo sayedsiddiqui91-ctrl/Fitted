@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
 import type { AssistantJobContext, AssistantSelection } from "@/lib/ai/types";
 import { analyzeJobDescription } from "@/lib/engine/jobAnalysis";
 import { AnimatePresence, motion } from "motion/react";
@@ -38,6 +38,7 @@ import { templateMeta } from "@/lib/cv/meta";
 import { downloadPdf, printCv } from "@/lib/export/pdf";
 import { downloadDocx } from "@/lib/export/docx";
 import { cn } from "@/lib/utils";
+import { useIsDesktop } from "@/lib/useMediaQuery";
 import { CVPreview } from "@/components/cv/CVPreview";
 import { ContentPanel, type FocusRequest } from "@/components/editor/ContentPanel";
 import { DesignPanel } from "@/components/editor/DesignPanel";
@@ -89,6 +90,12 @@ function EditorInner({ doc }: { doc: CVDoc }) {
   const update = useCallback((recipe: (d: CVDoc) => void) => updateCV(doc.id, recipe), [doc.id, updateCV]);
   const [tab, setTab] = useState<"content" | "design">("content");
   const [view, setView] = useState<"edit" | "preview">("edit");
+  // Below `lg` the two panels take turns, so only the visible one is mounted: the CV preview can't measure
+  // itself while it is display:none (it would render nothing and never scroll), and rendering a whole CV
+  // the user can't see is wasted work on a phone.
+  const desktop = useIsDesktop();
+  // Typing stays responsive on a long CV: the preview re-renders at a lower priority, a frame behind.
+  const previewDoc = useDeferredValue(doc);
   const [pages, setPages] = useState(1);
   const [zoom, setZoom] = useState<"fit" | "100">("fit");
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -141,7 +148,7 @@ function EditorInner({ doc }: { doc: CVDoc }) {
 
       <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(400px,480px)_1fr] xl:grid-cols-[520px_1fr]">
         {/* ── Editing panel ── */}
-        <section aria-label="Edit CV" className={cn("scroll-thin min-h-0 overflow-y-auto border-r border-border bg-bg pb-28 lg:block lg:pb-10", view === "edit" ? "block" : "hidden")}>
+        <section aria-label="Edit CV" className={cn("scroll-thin min-h-0 overflow-y-auto border-r border-border bg-bg pb-28 lg:block lg:pb-10", desktop || view === "edit" ? "block" : "hidden")}>
           <div className="sticky top-0 z-10 border-b border-border bg-bg/90 px-4 py-2.5 backdrop-blur-md sm:px-5">
             <Segmented
               label="Editor mode"
@@ -194,14 +201,16 @@ function EditorInner({ doc }: { doc: CVDoc }) {
         </section>
 
         {/* ── Live preview ── */}
-        <section aria-label="CV preview" className={cn("scroll-thin min-h-0 overflow-y-auto bg-surface-2/70 pb-28 lg:block lg:pb-10", view === "preview" ? "block" : "hidden")}>
-          <PreviewToolbar doc={doc} pages={pages} zoom={zoom} setZoom={setZoom} onDesign={() => setTab("design")} />
-          <div className="px-3 pb-10 pt-2 sm:px-8">
-            <div className={cn("mx-auto", zoom === "fit" ? "max-w-[860px]" : "")}>
-              <CVPreview doc={doc} zoom={zoom === "fit" ? "fit" : 1} onPages={setPages} />
+        {(desktop || view === "preview") && (
+          <section aria-label="CV preview" className="scroll-thin min-h-0 overflow-y-auto bg-surface-2/70 pb-28 lg:block lg:pb-10">
+            <PreviewToolbar doc={doc} pages={pages} zoom={zoom} setZoom={setZoom} onDesign={() => setTab("design")} />
+            <div className="px-3 pb-10 pt-2 sm:px-8">
+              <div className={cn("mx-auto", zoom === "fit" ? "max-w-[860px]" : "")}>
+                <CVPreview doc={previewDoc} zoom={zoom === "fit" ? "fit" : 1} onPages={setPages} />
+              </div>
             </div>
-          </div>
-        </section>
+          </section>
+        )}
       </div>
 
       {/* Mobile bottom bar */}

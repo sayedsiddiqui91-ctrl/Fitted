@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PDFDocumentProxy, PageViewport } from "pdfjs-dist";
 import { toast } from "sonner";
-import { AlertTriangle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Bold, FileDown, Italic, Loader2, MoreHorizontal, MousePointer2, RotateCcw, ScanText, Trash2, Type, Undo2, Wand2, X } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ArrowUpToLine, Bold, FileDown, Italic, Loader2, MoreHorizontal, MousePointer2, RotateCcw, ScanText, Trash2, Type, Undo2, Wand2, X } from "lucide-react";
 import { useStore, type PdfDoc } from "@/lib/store";
 import { applyPdfEdits } from "@/lib/pdf/edit";
 import { extractTextLayer, openPdf, renderPage, runRect, sampleColors } from "@/lib/pdf/load";
@@ -172,11 +172,82 @@ function PdfEditor({ doc }: { doc: PdfDoc }) {
     setDraft(null);
   };
 
+  /** Where every line on this page currently sits (its edit's position if it has one, else the original). */
+  const placed = (page: number) =>
+    runs
+      .filter((r) => r.page === page)
+      .map((r) => {
+        const e = doc.edits.find((x) => x.runId === r.id);
+        if (e?.kind === "delete") return null;
+        return { run: r, edit: e ?? null, y: e ? e.y : r.y, x: e ? e.x : r.x, w: r.width, fs: e ? e.fontSize : r.fontSize };
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null);
+
+  /** How far the lines under a deleted line would move up to close the gap it leaves. */
+  const gapUnder = (e: PdfEdit): number => {
+    const y = e.region?.y ?? e.y;
+    const below = placed(e.page).filter((p) => p.y < y - 1 && p.run.id !== e.runId);
+    if (!below.length) return 0;
+    const nextY = Math.max(...below.map((p) => p.y));
+    const shift = y - nextY;
+    // Only a plausible single line-height, and only if nothing else still sits on the deleted baseline
+    const onSameLine = placed(e.page).some((p) => Math.abs(p.y - y) < 1.5 && p.run.id !== e.runId);
+    return !onSameLine && shift > 2 && shift < 40 ? shift : 0;
+  };
+
+  /** Moves every line below a deleted one up, so the page closes up instead of leaving a hole. */
+  const closeGap = (del: PdfEdit) => {
+    const shift = gapUnder(del);
+    if (!shift) return;
+    const y = del.region?.y ?? del.y;
+    const previous = doc.edits;
+    const next = [...doc.edits];
+    for (const p of placed(del.page)) {
+      if (p.y >= y - 1) continue;
+      const existing = next.findIndex((x) => x.runId === p.run.id);
+      if (existing >= 0) next[existing] = { ...next[existing], y: next[existing].y + shift };
+      else next.push({ ...draftFor(p.run), y: p.run.y + shift });
+    }
+    setEdits(next);
+    toast.success("Gap closed", {
+      description: "The lines below moved up. Check the page — a PDF can't reflow text on its own.",
+      action: { label: "Undo", onClick: () => setEdits(previous) },
+    });
+  };
+
+  /** Lines the current edit would be drawn on top of (a PDF has no reflow, so this has to be visible). */
+  const overlapsWith = (e: PdfEdit): string[] => {
+    if (e.kind === "delete") return [];
+    const w = Math.max(20, measure(e.text, e.fontSize, e.family, e.bold));
+    return placed(e.page)
+      .filter((p) => p.run.id !== e.runId && Math.abs(p.y - e.y) < Math.max(3, e.fontSize * 0.6) && p.x < e.x + w - 1 && p.x + p.w > e.x + 1)
+      .map((p) => p.run.text);
+  };
+
   const onSelectRun = (r: PdfTextRun, sample?: { color: RGB; bg: RGB }) => {
     setSelected(r.id);
     const existing = doc.edits.find((e) => e.runId === r.id);
     setDraft(existing ? null : draftFor(r, sample));
   };
+  /* Per-page slices, kept stable so a keystroke in the inspector doesn't re-render (or re-rasterize)
+     every page. `sig` changes only when THIS page's edits change, which is when its canvas needs redrawing. */
+  const perPage = useMemo(() => {
+    const out: { runs: PdfTextRun[]; edits: PdfEdit[]; sig: string }[] = Array.from({ length: doc.pages }, () => ({ runs: [], edits: [], sig: "" }));
+    for (const r of runs) out[r.page]?.runs.push(r);
+    for (const e of doc.edits) {
+      const p = out[e.page];
+      if (!p) continue;
+      p.edits.push(e);
+      p.sig += `${e.id}:${e.kind}:${e.text}:${e.x}:${e.y}:${e.fontSize}:${e.bold}:${e.italic}:${e.family}|`;
+    }
+    return out;
+  }, [runs, doc.edits, doc.pages]);
+
+  const onSelectEdit = useCallback((e: PdfEdit) => {
+    setSelected(e.id);
+    setDraft(null);
+  }, []);
+
   const onAddAt = (page: number, x: number, y: number) => {
     const sizes = runs.filter((r) => r.page === page).map((r) => r.fontSize).sort((a, b) => a - b);
     const size = sizes[Math.floor(sizes.length / 2)] ?? 10;
@@ -388,15 +459,13 @@ function PdfEditor({ doc }: { doc: PdfDoc }) {
                     index={i}
                     viewPdf={viewPdf}
                     origPdf={origPdf!}
-                    runs={runs.filter((r) => r.page === i)}
-                    edits={doc.edits.filter((e) => e.page === i)}
+                    runs={perPage[i]?.runs ?? EMPTY_RUNS}
+                    edits={perPage[i]?.edits ?? EMPTY_EDITS}
+                    sig={perPage[i]?.sig ?? ""}
                     selected={selected}
                     tool={tool}
                     onSelectRun={onSelectRun}
-                    onSelectEdit={(e) => {
-                      setSelected(e.id);
-                      setDraft(null);
-                    }}
+                    onSelectEdit={onSelectEdit}
                     onAddAt={onAddAt}
                   />
                 ))}
@@ -420,6 +489,9 @@ function PdfEditor({ doc }: { doc: PdfDoc }) {
               onPatch={patch}
               onDelete={() => (current.kind === "add" ? revert() : patch({ kind: "delete" }))}
               onRevert={revert}
+              overlaps={overlapsWith(current)}
+              gapBelow={current.kind === "delete" ? gapUnder(current) : 0}
+              onCloseGap={() => closeGap(current)}
               onClose={() => {
                 setSelected(null);
                 setDraft(null);
@@ -477,12 +549,16 @@ function PdfEditor({ doc }: { doc: PdfDoc }) {
 }
 
 /* ───────── One page: rendered canvas + clickable text overlay ───────── */
+const EMPTY_RUNS: PdfTextRun[] = [];
+const EMPTY_EDITS: PdfEdit[] = [];
+
 const PageView = memo(function PageView({
   index,
   viewPdf,
   origPdf,
   runs,
   edits,
+  sig,
   selected,
   tool,
   onSelectRun,
@@ -494,6 +570,8 @@ const PageView = memo(function PageView({
   origPdf: PDFDocumentProxy;
   runs: PdfTextRun[];
   edits: PdfEdit[];
+  /** Fingerprint of this page's edits — the canvas is only rasterized again when it changes */
+  sig: string;
   selected: string | null;
   tool: "select" | "add";
   onSelectRun: (r: PdfTextRun, sample?: { color: RGB; bg: RGB }) => void;
@@ -503,6 +581,7 @@ const PageView = memo(function PageView({
   const wrap = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const sampleCanvas = useRef<HTMLCanvasElement | null>(null);
+  const drawn = useRef<string | null>(null);
   const [viewport, setViewport] = useState<PageViewport | null>(null);
   const [width, setWidth] = useState(0);
 
@@ -517,6 +596,10 @@ const PageView = memo(function PageView({
 
   useEffect(() => {
     if (!canvas.current || !width) return;
+    // Editing one line rebuilds the whole document, but only the edited page actually looks different:
+    // re-rasterizing every page on every keystroke is what made the editor feel slow.
+    const stamp = `${sig}@${Math.round(width)}`;
+    if (drawn.current === stamp) return;
     let cancelled = false;
     const draw = async () => {
       const page = await viewPdf.getPage(index + 1);
@@ -525,12 +608,13 @@ const PageView = memo(function PageView({
       // Geometry is known before rasterizing — make lines clickable right away instead of after the paint
       if (!cancelled) setViewport((prev) => (prev && prev.scale === scale ? prev : page.getViewport({ scale })));
       await renderPage(viewPdf, index, scale, canvas.current!);
+      if (!cancelled) drawn.current = stamp;
     };
     void draw().catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, [viewPdf, index, width]);
+  }, [viewPdf, index, width, sig]);
 
   const sampleFor = async (r: PdfTextRun) => {
     if (!viewport) return undefined;
@@ -612,7 +696,31 @@ const PageView = memo(function PageView({
 });
 
 /* ───────── Inspector ───────── */
-function Inspector({ edit, run, stored, onPatch, onDelete, onRevert, onClose }: { edit: PdfEdit; run: PdfTextRun | null; stored: boolean; onPatch: (p: Partial<PdfEdit>) => void; onDelete: () => void; onRevert: () => void; onClose: () => void }) {
+function Inspector({
+  edit,
+  run,
+  stored,
+  onPatch,
+  onDelete,
+  onRevert,
+  onClose,
+  overlaps,
+  gapBelow,
+  onCloseGap,
+}: {
+  edit: PdfEdit;
+  run: PdfTextRun | null;
+  stored: boolean;
+  onPatch: (p: Partial<PdfEdit>) => void;
+  onDelete: () => void;
+  onRevert: () => void;
+  onClose: () => void;
+  /** Lines this text is currently drawn over */
+  overlaps: string[];
+  /** How far the lines below would move up to close a deleted line's gap (0 = not offered) */
+  gapBelow: number;
+  onCloseGap: () => void;
+}) {
   const [text, setText] = useState(edit.text);
   const [lastId, setLastId] = useState(edit.id);
   if (edit.id !== lastId) {
@@ -626,7 +734,9 @@ function Inspector({ edit, run, stored, onPatch, onDelete, onRevert, onClose }: 
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text]);
-  const overflow = run && edit.kind !== "add" ? measure(text, edit.fontSize, edit.family, edit.bold) > run.width * 1.12 : false;
+  // Only warn about width once the text has actually been changed — the replacement font is a close
+  // match, not the original, so an untouched line can measure slightly wider and that means nothing.
+  const overflow = run && edit.kind !== "add" && text !== run.text ? measure(text, edit.fontSize, edit.family, edit.bold) > run.width * 1.12 : false;
   const nudge = (dx: number, dy: number) => onPatch({ x: Math.round((edit.x + dx) * 10) / 10, y: Math.round((edit.y + dy) * 10) / 10 });
   const deleted = edit.kind === "delete";
 
@@ -645,7 +755,18 @@ function Inspector({ edit, run, stored, onPatch, onDelete, onRevert, onClose }: 
         </div>
       )}
       {deleted ? (
-        <p className="rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-[13px] text-danger">This line will be removed from the PDF.</p>
+        <>
+          <p className="rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-[13px] text-danger">This line will be removed from the PDF.</p>
+          {gapBelow > 0 && (
+            <div className="rounded-lg border border-border bg-surface-2 px-3 py-2.5">
+              <p className="text-[13px] font-medium">It leaves a blank gap</p>
+              <p className="mt-0.5 text-xs text-muted">A PDF can&rsquo;t reflow text by itself. Move everything below this line up to close the gap.</p>
+              <Button size="sm" variant="secondary" className="mt-2" icon={<ArrowUpToLine className="size-4" />} onClick={onCloseGap}>
+                Close the gap
+              </Button>
+            </div>
+          )}
+        </>
       ) : (
         <>
           <div>
@@ -661,6 +782,12 @@ function Inspector({ edit, run, stored, onPatch, onDelete, onRevert, onClose }: 
               className="w-full resize-none rounded-[10px] border border-border bg-surface px-3 py-2 text-[15px] focus:border-accent focus:outline-none focus:ring-3 focus:ring-accent/15 sm:text-sm"
             />
             {overflow && <p className="mt-1 text-xs text-warning">This is wider than the original line — shorten it or reduce the font size so it doesn't overlap.</p>}
+            {overlaps.length > 0 && (
+              <p className="mt-1 text-xs text-warning">
+                This is sitting on top of “{overlaps[0].slice(0, 44)}
+                {overlaps[0].length > 44 ? "…" : ""}”{overlaps.length > 1 ? ` and ${overlaps.length - 1} more` : ""}. Move it, or delete that line too.
+              </p>
+            )}
           </div>
           <div className="flex flex-wrap items-end gap-2">
             <div>

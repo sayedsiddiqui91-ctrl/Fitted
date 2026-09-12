@@ -54,7 +54,20 @@ export const CVPreview = memo(function CVPreview({ doc, zoom = "fit", onPages, s
     setWidth(el.getBoundingClientRect().width);
     const ro = new ResizeObserver(([e]) => setWidth(e.contentRect.width));
     ro.observe(el);
-    return () => ro.disconnect();
+    // Safety net: a preview that mounted inside a hidden panel measures 0 and would stay blank if the
+    // observer never reports a size. Re-measure a few times, then stop.
+    let tries = 0;
+    const retry = window.setInterval(() => {
+      const w = el.getBoundingClientRect().width;
+      if (w > 0 || ++tries > 8) {
+        if (w > 0) setWidth(w);
+        window.clearInterval(retry);
+      }
+    }, 120);
+    return () => {
+      ro.disconnect();
+      window.clearInterval(retry);
+    };
   }, []);
 
   useLayoutEffect(() => {
@@ -73,7 +86,9 @@ export const CVPreview = memo(function CVPreview({ doc, zoom = "fit", onPages, s
     const fonts = (document as Document & { fonts?: FontFaceSet }).fonts;
     fonts?.ready.then(measure).catch(() => undefined);
     return () => ro.disconnect();
-  }, [doc, m]);
+    // `width` is a dependency because nothing is rendered until it is known — without it the page count
+    // would be measured against an empty preview and always come out as one page.
+  }, [doc, m, width]);
 
   const pages = Math.max(1, Math.ceil((contentH - 2 * m - 2) / perPage));
   useEffect(() => {

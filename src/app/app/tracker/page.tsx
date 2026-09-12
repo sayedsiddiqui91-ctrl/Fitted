@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { motion } from "motion/react";
 import { toast } from "sonner";
-import { Briefcase, ExternalLink, FileText, Pencil, Plus, Trash2 } from "lucide-react";
+import { Briefcase, ExternalLink, FileText, Pencil, Plus, Smartphone, Trash2 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { APPLICATION_STATUSES, type Application, type ApplicationStatus } from "@/lib/cv/schema";
 import { cn } from "@/lib/utils";
@@ -61,6 +61,14 @@ export default function TrackerPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight sm:text-[28px]">Job Tracker</h1>
           <p className="mt-1 text-sm text-muted">Remember which CV you sent where, and what happened next.</p>
+          <p className="mt-1 flex flex-wrap items-center gap-x-1.5 text-xs text-subtle">
+            <Smartphone className="size-3.5 shrink-0" aria-hidden />
+            Saved in this browser, on this device — Fitted has no accounts. To use it on your phone and laptop,
+            <Link href="/app/settings" className="font-medium text-accent underline-offset-2 hover:underline">
+              export a backup
+            </Link>
+            and import it on the other device.
+          </p>
         </div>
         <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setEditing({ status: "applied", dateApplied: new Date().toISOString().slice(0, 10) })}>
           Add application
