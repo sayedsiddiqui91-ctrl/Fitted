@@ -1,4 +1,5 @@
 import "server-only";
+import { claudeAllowed } from "@/lib/ai/enabled";
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
@@ -36,8 +37,7 @@ import { ANALYZE_JOB_SYSTEM, CHAT_SYSTEM, INTERVIEW_SYSTEM, OPTIMIZE_SYSTEM, PAR
 const MODEL = process.env.ANTHROPIC_MODEL || "claude-opus-5";
 
 export function claudeEnabled(): boolean {
-  if (process.env.FITTED_DISABLE_CLAUDE === "1") return false;
-  return Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
+  return claudeAllowed(process.env);
 }
 export const claudeModel = () => MODEL;
 

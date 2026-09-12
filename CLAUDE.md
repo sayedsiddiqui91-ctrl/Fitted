@@ -14,6 +14,9 @@ See `README.md` for the architecture table.
 - Job-posting metadata (company, location, salary, recruiter) never goes into CV text (`jobMeta.ts`).
 - The candidate's own address/contact details never go into summary/bullets (`personalInfo.ts`).
 - Never hardcode or expose API keys; `ANTHROPIC_API_KEY` is server-side only (optional — the on-device engine works without it).
+- **Fitted is free to run.** A key alone must never enable paid AI on a deployed build: production also needs
+  `FITTED_ENABLE_CLAUDE=1` (`src/lib/ai/enabled.ts`), so a key left in a hosting dashboard can't bill the owner
+  for visitors. `FITTED_DISABLE_CLAUDE=1` is the kill switch.
 - Never show raw errors/stack traces to users.
 - Don't rebuild from scratch; fix root causes and add a regression test (`tests/regressions.test.ts`).
 

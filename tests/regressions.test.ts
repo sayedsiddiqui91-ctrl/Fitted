@@ -1,4 +1,5 @@
 import { suite, test, expect } from "./harness";
+import { claudeAllowed } from "@/lib/ai/enabled";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { CVDocument } from "../src/components/cv/CVDocument";
@@ -461,5 +462,24 @@ suite("Personal details stay in the header", () => {
   test("Review My CV flags an address used as the title", () => {
     const items = reviewCV(withAddressTitle(), DEFAULT_DESIGN).items;
     expect(items.some((i) => /professional title doesn't look like a job title/i.test(i.title)), "should flag the title");
+  });
+});
+
+suite("Free to run: paid AI can't switch itself on", () => {
+  const KEY = "sk-ant-test";
+  test("a key left in the hosting dashboard does NOT enable paid AI in production", () => {
+    expect(!claudeAllowed({ ANTHROPIC_API_KEY: KEY, NODE_ENV: "production" }), "production must stay on the free on-device engine");
+    expect(!claudeAllowed({ ANTHROPIC_AUTH_TOKEN: KEY, NODE_ENV: "production" }), "an auth token must not enable it either");
+  });
+  test("production needs the explicit opt-in as well as a key", () => {
+    expect(claudeAllowed({ ANTHROPIC_API_KEY: KEY, FITTED_ENABLE_CLAUDE: "1", NODE_ENV: "production" }), "explicit opt-in should work");
+    expect(!claudeAllowed({ FITTED_ENABLE_CLAUDE: "1", NODE_ENV: "production" }), "the opt-in alone, with no key, must not enable it");
+  });
+  test("the kill switch beats every other setting", () => {
+    expect(!claudeAllowed({ ANTHROPIC_API_KEY: KEY, FITTED_ENABLE_CLAUDE: "1", FITTED_DISABLE_CLAUDE: "1", NODE_ENV: "production" }), "FITTED_DISABLE_CLAUDE=1 must win");
+  });
+  test("local development still works with just a key", () => {
+    expect(claudeAllowed({ ANTHROPIC_API_KEY: KEY, NODE_ENV: "development" }), "npm run dev with a key should use Claude");
+    expect(!claudeAllowed({ NODE_ENV: "development" }), "no key, no paid AI");
   });
 });
