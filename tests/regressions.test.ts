@@ -483,3 +483,81 @@ suite("Free to run: paid AI can't switch itself on", () => {
     expect(!claudeAllowed({ NODE_ENV: "development" }), "no key, no paid AI");
   });
 });
+
+suite("Import: a dense technical CV", () => {
+  // Shaped like a real software-engineering CV: long bullets that wrap onto a second line,
+  // a projects list with one project per bullet, and a phone number that looks like a date range.
+  const CV = [
+    "ARIYAN JAHANGIR",
+    "Software Engineer — Full-Stack & API Integrations",
+    "Dhaka, Bangladesh | ariyan@example.com | +880 1817 274124",
+    "",
+    "§§ PROFESSIONAL EXPERIENCE",
+    "",
+    "Full Stack Assistant Software Engineer — A4Aero Limited   Dec 2024 – Present",
+    "• Work extensively with REST, GraphQL and SOAP APIs; deliver secure auth via Google OAuth and",
+    "Meta Auth.",
+    "",
+    "Junior Software Engineer — Accelx Inc.   Feb 2024 – Nov 2024",
+    "• Containerized services with Docker; automated ML workflows via",
+    "Shell/Python and integrated models into Django backends.",
+    "",
+    "§§ SELECTED PROJECTS",
+    "",
+    "• Huddle — huddle.ariyan.app — Real-time collaboration platform combining chat and file sharing.",
+    "• FairSplit — fair-split.ariyan.app — Utility bill-splitting app for shared electricity costs.",
+    "",
+    "§§ EDUCATION",
+    "",
+    "Bachelor of Science, Computer Science and Engineering   Jan 2019 – Mar 2023",
+    "American International University-Bangladesh — CGPA 3.94, Magna Cum Laude",
+    "",
+    "§§ REFERENCES",
+    "",
+    "D M Imtiaz Ul Amin — Senior Account Manager, Ericsson | imtiaz@example.com | +880 1613-142805",
+  ].join("\n");
+
+  test("a bullet wrapped onto a second line is not read as a new job title", () => {
+    const { content } = parseResumeText(CV);
+    expect(content.experience.length === 2, `expected 2 jobs, got ${content.experience.length}: ${content.experience.map((e) => e.role).join(" | ")}`);
+    expect(
+      content.experience.every((e) => e.company),
+      "every job keeps its company",
+    );
+    const first = content.experience[0].bullets.map((b) => b.text).join(" ");
+    expect(/Google OAuth and Meta Auth\./.test(first), `wrapped bullet was not re-joined: ${first}`);
+    const second = content.experience[1].bullets.map((b) => b.text).join(" ");
+    expect(/workflows via Shell\/Python and integrated/.test(second), `wrapped bullet was not re-joined: ${second}`);
+  });
+
+  test("a projects list keeps each project's name and link", () => {
+    const { projects } = parseResumeText(CV).content;
+    expect(projects.length === 2, `expected 2 projects, got ${projects.length}`);
+    expect(projects[0].name === "Huddle", `name was “${projects[0].name}”`);
+    expect(projects[0].link === "huddle.ariyan.app", `link was “${projects[0].link}”`);
+    expect(projects[1].name === "FairSplit", `name was “${projects[1].name}”`);
+  });
+
+  test("the subject after a degree is the field, and the university line is the school", () => {
+    const e = parseResumeText(CV).content.education[0];
+    expect(e.degree === "Bachelor of Science", `degree was “${e.degree}”`);
+    expect(e.field === "Computer Science and Engineering", `field was “${e.field}”`);
+    expect(/American International University/.test(e.school), `school was “${e.school}”`);
+    expect(/3\.94/.test(e.grade), `grade was “${e.grade}”`);
+  });
+
+  test("a phone number is never read as a date range", () => {
+    const { content } = parseResumeText(CV);
+    const dates = [
+      ...content.experience.flatMap((e) => [e.startDate, e.endDate]),
+      ...content.education.flatMap((e) => [e.startDate, e.endDate]),
+      ...content.custom.flatMap((s) => s.items.map((i) => i.date)),
+    ].filter(Boolean);
+    expect(
+      dates.every((d) => /^(?:[A-Za-z]{3,9}\s)?(?:19|20)\d{2}$|^Present$/.test(d)),
+      `a phone number was read as a date: ${dates.join(", ")}`,
+    );
+    const ref = content.custom.find((s) => /references/i.test(s.title));
+    expect(ref?.items.every((i) => !i.date), "the reference's phone number must not become a date");
+  });
+});

@@ -14,3 +14,4 @@ public/pdf.worker.min.mjs
 # local artifacts
 *.traineddata
 .claude/
+.scratch/

@@ -24,7 +24,8 @@ const SECTION_RES: { kind: SectionKind; re: RegExp }[] = [
 ];
 
 const MONTH = "(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\\.?";
-const DATE = `(?:${MONTH}\\s*,?\\s*\\d{4}|\\d{1,2}[/.-]\\d{4}|\\d{4})`;
+const YEAR = "(?:19|20)\\d{2}";
+const DATE = `(?:${MONTH}\\s*,?\\s*${YEAR}|\\d{1,2}[/.-]${YEAR}|${YEAR})`;
 const RANGE_RE = new RegExp(`(${DATE})\\s*(?:-|–|—|to|until|›)\\s*(${DATE}|present|current|now|today|ongoing)`, "i");
 const SINGLE_DATE_RE = new RegExp(`\\b(${DATE})\\b`, "i");
 const BULLET_RE = /^[\s]*[•·▪‣◦●■□➢►▶✓✔*\-–—]\s*/;
@@ -118,6 +119,10 @@ function titleCase(s: string) {
 function splitRange(line: string): { rest: string; start: string; end: string; current: boolean } | null {
   const m = line.match(RANGE_RE);
   if (!m) return null;
+  // Guard against digits either side: "+880 1613-142805" is a phone number, not 1613–1428
+  const before = line[(m.index ?? 0) - 1];
+  const after = line[(m.index ?? 0) + m[0].length];
+  if ((before && /[\d/.-]/.test(before)) || (after && /\d/.test(after))) return null;
   const end = m[2];
   const current = /present|current|now|today|ongoing/i.test(end);
   // Drop empty "( )" left by "(2019 – 2025)" and dangling separators, but keep closing brackets: "(HSC)" stays intact
@@ -140,6 +145,10 @@ function splitParts(line: string): string[] {
     .map((s) => s.trim())
     .filter(Boolean);
 }
+
+/* A line that stops on a conjunction, preposition, article or open punctuation is unfinished, so the
+   next line belongs to it. Used to re-join a bullet the PDF wrapped across two lines. */
+const DANGLING_END_RE = /(?:\b(?:and|or|nor|but|the|an?|to|for|of|in|on|at|by|as|with|via|from|into|onto|upon|using|include|including|between|across|through|during|over|under|about|per|plus|toward|towards|within|without|against|alongside|among|after|before|while|when|where|which|that|who|whose|whom|than|then|both|either|neither|its|their|our|your|his|her)|[,;:&/(\[\u2013\u2014-])\s*$/i;
 
 interface Block {
   head: string[];
@@ -186,7 +195,19 @@ export function toBlocks(lines: string[]): Block[] {
       continue;
     }
     const looksLikeHeader = !!range || (words <= 9 && !/[.;]$/.test(text)) || nextHasRange;
-    const continuation = !afterGap && cur && cur.bullets.length && (/^[a-z(&]/.test(text) || (!/[.;:]$/.test(cur.bullets[cur.bullets.length - 1]) && words > 3 && !range && !nextHasRange && !/^[A-Z][a-z]+\s+[A-Z]/.test(text)));
+    const prevBullet = cur?.bullets[cur.bullets.length - 1] ?? "";
+    // A bullet that stops mid-sentence ("…via Google OAuth and") is continued by the next line, however short
+    // or capitalised that line looks ("Meta Auth."). Only a blank line, or a date range on the line itself,
+    // starts a new entry there — without this, wrapped bullets in dense CVs became phantom job titles.
+    const danglingTail = !!prevBullet && (DANGLING_END_RE.test(prevBullet) || /\w-$/.test(prevBullet));
+    const continuation =
+      !afterGap &&
+      cur &&
+      cur.bullets.length &&
+      !range &&
+      (danglingTail ||
+        /^[a-z(&]/.test(text) ||
+        (!/[.;:]$/.test(prevBullet) && words > 3 && !nextHasRange && !/^[A-Z][a-z]+\s+[A-Z]/.test(text)));
     if (continuation && !range) {
       // "…strategic decision-" + "making skills" → "decision-making" (a line break at a hyphen isn't a space)
       const k = cur!.bullets.length - 1;
@@ -304,6 +325,24 @@ function joinWrapped(lines: string[]): string[] {
     else out.push(t);
   }
   return out;
+}
+
+/** A projects section is often one bullet per project: "Huddle — huddle.app — Real-time collaboration…".
+    Splits such a bullet into name / link / description so the project names survive the import. */
+function splitProjectBullet(t: string): { name: string; link: string; desc: string } | null {
+  const parts = t.split(/\s+[\u2014\u2013]\s+|\s+-\s+/);
+  if (parts.length < 2) return null;
+  const name = parts[0].trim();
+  if (!name || name.split(/\s+/).length > 6 || /[.;,:]$/.test(name)) return null;
+  let rest = parts.slice(1).map((x) => x.trim()).filter(Boolean);
+  let link = "";
+  if (rest.length > 1 && !rest[0].includes(" ") && URL_RE.test(rest[0])) {
+    link = rest[0].match(URL_RE)![0];
+    rest = rest.slice(1);
+  }
+  const desc = rest.join(" — ").trim();
+  if (!desc) return null;
+  return { name, link, desc };
 }
 
 const NOT_SKILLS_LABEL = /\b(coursework|modules?|courses?|subjects?|thesis|dissertation|research|projects?|awards?|achievements?|activities|clubs?|societ(?:y|ies)|honou?rs|scholarships?|grade|gpa|responsibilities)\b/i;
@@ -513,6 +552,16 @@ export function parseResumeText(raw: string, opts: ParseOptions = {}): ParseResu
             Object.assign(v, { role, organization: company, location, startDate: b.start, endDate: b.end, current: b.current, bullets });
             content.volunteer.push(v);
           } else {
+            // One bullet per project (no heading line): keep each project's own name and link
+            const asProjects = !role && !company && b.bullets.length >= 2 ? b.bullets.map(splitProjectBullet) : [];
+            if (asProjects.length && asProjects.every((x) => x !== null)) {
+              for (const x of asProjects) {
+                const one = newProject();
+                Object.assign(one, { name: x!.name, link: x!.link, bullets: [newBullet(x!.desc)] });
+                content.projects.push(one);
+              }
+              continue;
+            }
             const p = newProject();
             const url = b.head.join(" ").match(URL_RE)?.[0] ?? "";
             Object.assign(p, { name: role.replace(url, "").trim() || company, role: role ? company : "", link: url, startDate: b.start, endDate: b.end, bullets });
@@ -540,6 +589,7 @@ export function parseResumeText(raw: string, opts: ParseOptions = {}): ParseResu
             } else e.degree = clean;
           };
           let status = "";
+          let afterDegree = false;
           const extras: string[] = [];
           const queue = [...parts];
           while (queue.length) {
@@ -564,9 +614,24 @@ export function parseResumeText(raw: string, opts: ParseOptions = {}): ParseResu
               if (g.before) queue.unshift(g.before);
               continue;
             }
-            if (!e.degree && DEGREE_STRONG.test(clean)) setDegree(clean);
+            // "Bachelor of Science, Computer Science and Engineering": the part right after the degree names
+            // the subject, not the institution — an institution keeps a school word (University, College, …).
+            const subjectAfterDegree =
+              afterDegree && !e.field && !SCHOOL_HINT.test(clean) && !LOCATION_RE.test(clean) && clean.split(/\s+/).length >= 2 && !/^[A-Z]{2,}$/.test(clean);
+            afterDegree = false;
+            if (subjectAfterDegree) {
+              e.field = clean;
+              continue;
+            }
+            if (!e.degree && DEGREE_STRONG.test(clean)) {
+              setDegree(clean);
+              afterDegree = !e.field;
+            }
             else if (!e.school && SCHOOL_HINT.test(clean)) e.school = clean;
-            else if (!e.degree && DEGREE_HINT.test(clean)) setDegree(clean);
+            else if (!e.degree && DEGREE_HINT.test(clean)) {
+              setDegree(clean);
+              afterDegree = !e.field;
+            }
             else if (!status && EDU_STATUS_RE.test(clean)) status = clean;
             else if (!e.grade && /\b(honou?rs|first class|2:1|2:2|distinction|merit|cum laude)\b/i.test(clean)) e.grade = clean;
             else if (!e.location && LOCATION_RE.test(clean)) e.location = clean;
@@ -578,8 +643,19 @@ export function parseResumeText(raw: string, opts: ParseOptions = {}): ParseResu
           // "ACCA Qualification (Ongoing)" + "Part Qualified (3/13 papers completed)" → one qualification line
           if (status) e.degree = e.degree ? `${e.degree} — ${status}` : status;
           if (extras.length) e.bullets.push(newBullet(extras.join(" · ")));
-          for (const t of b.bullets) {
-            const g = t.length < 40 ? splitGrade(t) : null;
+          for (let bi = 0; bi < b.bullets.length; bi++) {
+            const t = b.bullets[bi];
+            const plain = b.plain[bi] === true;
+            const g = t.length < 40 || plain ? splitGrade(t) : null;
+            // A plain (unbulleted) line naming the institution belongs in School, with its grade —
+            // "American International University-Bangladesh — CGPA 3.94, Magna Cum Laude" is not a bullet.
+            if (plain && !e.school && SCHOOL_HINT.test(g?.before || t)) {
+              e.school = (g?.before ?? t).replace(/[\s,;:\u2013\u2014-]+$/, "").trim();
+              if (g && !e.grade) e.grade = g.grade;
+              const rest = (g?.after ?? "").replace(/^[\s,;:\u2013\u2014-]+/, "").trim();
+              if (rest) e.bullets.push(newBullet(rest));
+              continue;
+            }
             if (!e.grade && g && !g.before) {
               e.grade = g.grade;
               if (g.after && !e.location && PLACE_RE.test(g.after)) e.location = g.after;
