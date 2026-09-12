@@ -538,6 +538,31 @@ suite("Import: PDFs that report the wrong glyph widths", () => {
   });
 });
 
+suite("A project's link is a real link", () => {
+  const docFor = (template: (typeof TEMPLATE_DEFS)[number]["id"]) => {
+    const content = sampleContent();
+    content.projects = [{ id: "p1", name: "Fitted — AI CV Builder", role: "", link: "https://fitted-cv.vercel.app/", startDate: "", endDate: "", bullets: [newBullet("Built an AI-powered CV builder.")] }];
+    const layout = defaultLayout();
+    if (!layout.order.includes("projects")) layout.order.push("projects");
+    layout.hidden = layout.hidden.filter((k) => k !== "projects");
+    return { content, layout, design: { ...DEFAULT_DESIGN, template } };
+  };
+
+  test("every template renders the URL as a clickable anchor", () => {
+    for (const t of TEMPLATE_DEFS) {
+      const html = renderToStaticMarkup(createElement(CVDocument, { doc: docFor(t.id) }));
+      expect(html.includes('href="https://fitted-cv.vercel.app/"'), `${t.name}: the project URL is not a link`);
+      expect(html.includes("fitted-cv.vercel.app"), `${t.name}: the project URL is missing`);
+    }
+  });
+
+  test("thumbnails keep it as plain text (a link inside a link is invalid)", () => {
+    const html = renderToStaticMarkup(createElement(CVDocument, { doc: docFor("modern"), interactive: false }));
+    expect(!html.includes("<a "), "a thumbnail must not contain anchors");
+    expect(html.includes("fitted-cv.vercel.app"), "the URL should still be shown");
+  });
+});
+
 suite("Job posting written as prose, not bullets", () => {
   const JD = [
     "Backend Engineer — Fintech Ltd, Dhaka",

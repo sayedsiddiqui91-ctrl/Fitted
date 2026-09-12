@@ -70,7 +70,7 @@ export function CVDocument({ doc, showPlaceholders = false, interactive = true }
   const photoInAside = !!photo && def.layout !== "single" && def.contactInSidebar;
 
   const renderSection = (key: string, zone: "main" | "aside") => {
-    const node = sectionBody(key, content, def, zone);
+    const node = sectionBody(key, content, def, zone, interactive);
     if (!node) return null;
     const title = <h2 className="cv-h2">{sectionTitle(fullDoc, key)}</h2>;
     if (def.sectionStyle === "rail" && zone === "main") {
@@ -273,14 +273,24 @@ interface EntryProps {
   title: string;
   org: string;
   location?: string;
+  /** Makes `location` a real link (a project's URL) — clickable on screen and in the exported PDF */
+  href?: string;
   date?: string;
   extra?: string;
   children?: ReactNode;
 }
 
 /** Entry heading layout varies per template; the text itself never changes. */
-function Entry({ def, title, org, location, date, extra, children }: EntryProps) {
+function Entry({ def, title, org, location, href, date, extra, children }: EntryProps) {
   const sep = def.separator;
+  const loc = (text: string | undefined): ReactNode =>
+    href ? (
+      <a className="cv-a" href={href} target="_blank" rel="noopener noreferrer">
+        {text}
+      </a>
+    ) : (
+      text
+    );
   const primary = title || org;
   const secondary = title ? org : "";
 
@@ -290,7 +300,7 @@ function Entry({ def, title, org, location, date, extra, children }: EntryProps)
         <div className="cv-item">
           <div className="cv-row">
             <div className="cv-org">{org || title}</div>
-            {hasText(location) && <div className="cv-loc">{location}</div>}
+            {hasText(location) && <div className="cv-loc">{loc(location)}</div>}
           </div>
           {(org ? hasText(title) : false) || hasText(date) || hasText(extra) ? (
             <div className="cv-row">
@@ -310,7 +320,7 @@ function Entry({ def, title, org, location, date, extra, children }: EntryProps)
         <div className="cv-item cv-dl">
           <div className="cv-dl-side">
             {hasText(date) && <div className="cv-date">{date}</div>}
-            {hasText(location) && <div className="cv-loc">{location}</div>}
+            {hasText(location) && <div className="cv-loc">{loc(location)}</div>}
           </div>
           <div className="cv-dl-main">
             <div className="cv-title">{primary}</div>
@@ -332,7 +342,12 @@ function Entry({ def, title, org, location, date, extra, children }: EntryProps)
             <div className="cv-line">
               <span className="cv-title">{primary}</span>
               {secondary && <span className="cv-org">{`, ${secondary}`}</span>}
-              {hasText(location) && <span className="cv-sub">{` — ${location}`}</span>}
+              {hasText(location) && (
+                <span className="cv-sub">
+                  {" — "}
+                  {loc(location)}
+                </span>
+              )}
               {hasText(extra) && <span className="cv-sub">{`${sep}${extra}`}</span>}
             </div>
             {hasText(date) && <div className="cv-date">{date}</div>}
@@ -349,9 +364,17 @@ function Entry({ def, title, org, location, date, extra, children }: EntryProps)
           {[secondary, location, extra].some(hasText) && (
             <div className="cv-sub">
               {secondary && <span className="cv-org">{secondary}</span>}
-              {[location, extra].filter(hasText).map((s, i) => (
-                <span key={i}>{`${secondary || i > 0 ? sep : ""}${s}`}</span>
-              ))}
+              {[
+                { text: location, link: true },
+                { text: extra, link: false },
+              ]
+                .filter((x) => hasText(x.text))
+                .map((x, i) => (
+                  <span key={i}>
+                    {secondary || i > 0 ? sep : ""}
+                    {x.link ? loc(x.text) : x.text}
+                  </span>
+                ))}
             </div>
           )}
           {children}
@@ -369,12 +392,17 @@ function Entry({ def, title, org, location, date, extra, children }: EntryProps)
           {title && subParts.length > 0 && (
             <div className="cv-sub">
               {org && <span className="cv-org">{org}</span>}
-              {[location, extra].filter(hasText).map((s, i) => (
-                <span key={i}>
-                  {org || i > 0 ? sep : ""}
-                  {s}
-                </span>
-              ))}
+              {[
+                { text: location, link: true },
+                { text: extra, link: false },
+              ]
+                .filter((x) => hasText(x.text))
+                .map((x, i) => (
+                  <span key={i}>
+                    {org || i > 0 ? sep : ""}
+                    {x.link ? loc(x.text) : x.text}
+                  </span>
+                ))}
             </div>
           )}
           {children}
@@ -384,7 +412,7 @@ function Entry({ def, title, org, location, date, extra, children }: EntryProps)
   }
 }
 
-function sectionBody(key: string, c: CVContent, def: TemplateDef, zone: "main" | "aside"): ReactNode | null {
+function sectionBody(key: string, c: CVContent, def: TemplateDef, zone: "main" | "aside", interactive: boolean): ReactNode | null {
   const inAside = zone === "aside";
   switch (key) {
     case "summary":
@@ -491,7 +519,7 @@ function sectionBody(key: string, c: CVContent, def: TemplateDef, zone: "main" |
       const items = c.projects.filter((p) => hasText(p.name));
       if (!items.length) return null;
       return items.map((p) => (
-        <Entry key={p.id} def={def} title={clean(p.name)} org={clean(p.role)} location={p.link ? displayUrl(clean(p.link)) : ""} date={formatRange(p.startDate, p.endDate)}>
+        <Entry key={p.id} def={def} title={clean(p.name)} org={clean(p.role)} location={hasText(p.link) ? displayUrl(clean(p.link)) : ""} href={interactive && hasText(p.link) ? hrefFor(clean(p.link)) : undefined} date={formatRange(p.startDate, p.endDate)}>
           <Bullets items={p.bullets} />
         </Entry>
       ));

@@ -54,6 +54,14 @@ export async function downloadDocx(doc: CVDoc): Promise<void> {
       spacing: { before: 80 },
     });
   const sub = (t: string) => (t ? new Paragraph({ children: [run(t, { color: "555555" })], keepNext: true }) : null);
+  /** A project's URL, kept clickable in Word */
+  const subLink = (t: string) =>
+    t
+      ? new Paragraph({
+          children: [new ExternalHyperlink({ link: t.startsWith("http") ? t : `https://${t}`, children: [new TextRun({ text: t.replace(/^https?:\/\//, ""), font, size, color: "0563C1", underline: {} })] })],
+          keepNext: true,
+        })
+      : null;
   const bullets = (list: { text: string }[]) => list.filter((b) => b.text.trim()).map((b) => new Paragraph({ children: [run(b.text.trim())], bullet: { level: 0 }, spacing: { after: 30 } }));
   const push = (...ps: (Paragraph | null)[]) => ps.forEach((x) => x && children.push(x));
 
@@ -93,7 +101,7 @@ export async function downloadDocx(doc: CVDoc): Promise<void> {
       case "projects":
         if (!c.projects.length) break;
         push(heading(title));
-        for (const pr of c.projects) push(lineWithDate([run(pr.name, { bold: true }), ...(pr.role ? [run(` — ${pr.role}`)] : [])], formatRange(pr.startDate, pr.endDate)), sub(pr.link), ...bullets(pr.bullets));
+        for (const pr of c.projects) push(lineWithDate([run(pr.name, { bold: true }), ...(pr.role ? [run(` — ${pr.role}`)] : [])], formatRange(pr.startDate, pr.endDate)), subLink(pr.link), ...bullets(pr.bullets));
         break;
       case "certifications":
         if (!c.certifications.length) break;

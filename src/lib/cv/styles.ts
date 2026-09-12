@@ -10,6 +10,8 @@ export const CV_CSS = `
 .cv-root *{box-sizing:border-box;margin:0;padding:0}
 .cv-page{background:#fff;width:var(--cv-pw,210mm);min-height:var(--cv-ph,297mm);padding:var(--cv-margin);position:relative}
 .cv-root a{color:inherit;text-decoration:none}
+.cv-root a.cv-a{color:var(--cv-accent)}
+.cv-root a.cv-a:hover{text-decoration:underline}
 .cv-name{font-size:calc(var(--cv-fs) * 2.3pt * var(--cv-hs));font-weight:700;line-height:1.12;letter-spacing:-0.01em}
 .cv-headline{font-size:calc(var(--cv-fs) * 1.15pt);color:var(--cv-muted);margin-top:.2em;font-weight:500}
 .cv-contact{display:flex;flex-wrap:wrap;gap:.1em .45em;margin-top:.6em;font-size:calc(var(--cv-fs) * .92pt);color:var(--cv-muted)}
