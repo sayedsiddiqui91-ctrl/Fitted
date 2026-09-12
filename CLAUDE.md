@@ -29,6 +29,9 @@ See `README.md` for the architecture table.
 - Templates: `src/lib/cv/templates.ts` → `src/components/cv/CVDocument.tsx` + `src/lib/cv/styles.ts`.
 - UI helper `cn()` uses tailwind-merge (a caller's `hidden`/`w-*` must override component defaults).
 - Landing CTA: `src/components/ui/liquid-metal-button.tsx` (@paper-design/shaders 0.0.80; tinted with `--accent`).
+- **Landing page budget.** It is the first thing a phone downloads, so it carries no animation library
+  (CSS classes in `globals.css`: `.reveal`, `.anim-*`), one batched Google-Fonts request, lazy template
+  thumbnails, and a WebGL CTA that only loads on a capable device. Keep it that way when adding to it.
 
 ## Testing notes
 - The in-app browser pane often isn't painting: requestAnimationFrame/ResizeObserver/focus don't fire and the live

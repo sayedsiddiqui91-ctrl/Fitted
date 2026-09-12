@@ -71,8 +71,11 @@ export const CV_FONTS: FontOption[] = [
 
 export const fontOption = (name: string) => CV_FONTS.find((f) => f.name === name) ?? CV_FONTS[0];
 
-export const googleFontHref = (name: string) =>
-  `https://fonts.googleapis.com/css2?family=${fontOption(name).google}&display=swap`;
+export const googleFontHref = (name: string) => googleFontsHref([name]);
+
+/** One stylesheet for several CV fonts — the template strip needs eight of them, and eight
+    separate requests to Google is what made the landing page slow on a phone. */
+export const googleFontsHref = (names: string[]) => `https://fonts.googleapis.com/css2?${names.map((n) => `family=${fontOption(n).google}`).join("&")}&display=swap`;
 
 export const ACCENT_SWATCHES = [
   "#111827",

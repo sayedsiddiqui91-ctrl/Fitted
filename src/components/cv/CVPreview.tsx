@@ -2,22 +2,41 @@
 
 import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { CVDoc } from "@/lib/cv/schema";
-import { googleFontHref, MM_TO_PX, PAGE_DIMENSIONS } from "@/lib/cv/meta";
+import { googleFontsHref, MM_TO_PX, PAGE_DIMENSIONS } from "@/lib/cv/meta";
 import { cn } from "@/lib/utils";
 import { CVDocument } from "./CVDocument";
 
 type DocLike = Pick<CVDoc, "content" | "layout" | "design">;
 
+/* CV fonts are fetched from Google. Several previews on one screen used to mean one request each
+   (the landing page asked for eight), all competing with the page's own JS and CSS. Requests made in
+   the same pass are batched into a single stylesheet and sent once the browser is idle. */
+const fontsLoaded = new Set<string>();
+const fontsPending = new Set<string>();
+let fontFlushScheduled = false;
+
+function flushCvFonts() {
+  fontFlushScheduled = false;
+  const families = [...fontsPending].filter((f) => !fontsLoaded.has(f));
+  fontsPending.clear();
+  if (!families.length) return;
+  for (const f of families) fontsLoaded.add(f);
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href = googleFontsHref(families);
+  document.head.appendChild(link);
+}
+
 /** Loads a Google Font for the CV on demand (only the families actually used). */
 export function useCvFont(font: string) {
   useEffect(() => {
-    const id = `cvfont-${font.replace(/\s+/g, "-")}`;
-    if (document.getElementById(id)) return;
-    const link = document.createElement("link");
-    link.id = id;
-    link.rel = "stylesheet";
-    link.href = googleFontHref(font);
-    document.head.appendChild(link);
+    if (fontsLoaded.has(font) || fontsPending.has(font)) return;
+    fontsPending.add(font);
+    if (fontFlushScheduled) return;
+    fontFlushScheduled = true;
+    const idle = (window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number }).requestIdleCallback;
+    if (idle) idle(flushCvFonts, { timeout: 1000 });
+    else window.setTimeout(flushCvFonts, 60);
   }, [font]);
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { liquidMetalFragmentShader, ShaderMount } from "@paper-design/shaders";
+import type { ShaderMount } from "@paper-design/shaders";
 import { Sparkles } from "lucide-react";
 import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -113,14 +113,30 @@ export function LiquidMetalButton({ label = "Get Started", onClick, viewMode = "
 
     const rgb = readColor(probeRef.current) ?? FALLBACK;
     setGlowRgb(rgb);
-    try {
-      if (shaderRef.current) {
+
+    /* The animated metal is a finishing touch, not the button. Its shader library is ~90 KB and it keeps a
+       WebGL canvas redrawing, which is exactly the wrong trade on a phone or a modest laptop — so it is
+       fetched only when the device can clearly spare it, and only once the page is idle. The button looks
+       and works the same without it. */
+    let cancelled = false;
+    const nav = navigator as Navigator & { deviceMemory?: number };
+    const spareCapacity = !reducedMotion.current && !window.matchMedia("(max-width: 767px)").matches && (nav.hardwareConcurrency ?? 8) >= 4 && (nav.deviceMemory ?? 8) >= 4;
+    const startShader = async () => {
+      if (cancelled || !shaderRef.current) return;
+      try {
+        const { ShaderMount: Mount, liquidMetalFragmentShader } = await import("@paper-design/shaders");
+        if (cancelled || !shaderRef.current) return;
         shaderMount.current?.dispose();
-        shaderMount.current = new ShaderMount(shaderRef.current, liquidMetalFragmentShader, baseUniforms(tintFor(rgb)), undefined, reducedMotion.current ? 0 : 0.6);
+        shaderMount.current = new Mount(shaderRef.current, liquidMetalFragmentShader, baseUniforms(tintFor(rgb)), undefined, 0.6);
+      } catch {
+        // No WebGL, or the library didn't load: the button still works and looks fine without the animated rim
+        shaderMount.current = null;
       }
-    } catch {
-      // No WebGL: the button still works and looks fine without the animated rim
-      shaderMount.current = null;
+    };
+    if (spareCapacity) {
+      const idle = (window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number }).requestIdleCallback;
+      if (idle) idle(() => void startShader(), { timeout: 2500 });
+      else window.setTimeout(() => void startShader(), 400);
     }
 
     // Follow the theme: the accent is lighter in dark mode
@@ -133,6 +149,7 @@ export function LiquidMetalButton({ label = "Get Started", onClick, viewMode = "
     theme.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "data-theme", "style"] });
 
     return () => {
+      cancelled = true;
       media.removeEventListener("change", onMotionChange);
       theme.disconnect();
       shaderMount.current?.dispose();

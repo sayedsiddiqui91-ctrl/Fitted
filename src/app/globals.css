@@ -231,3 +231,24 @@ input[type="range"].range::-moz-range-thumb {
     scroll-behavior: auto !important;
   }
 }
+
+/* ── Landing-page motion, in CSS ──
+   The landing page used a JavaScript animation library for a handful of entrance effects; that is
+   ~50 KB of script and main-thread work before a visitor sees anything, which a phone feels. These
+   do the same job with compositor-only properties, and the reduced-motion block above disables them. */
+@keyframes rise-in { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+@keyframes rise-in-tilt { from { opacity: 0; transform: translateY(30px) rotate(-2deg); } to { opacity: 1; transform: rotate(-2deg); } }
+@keyframes slide-in-x { from { opacity: 0; transform: translateX(30px); } to { opacity: 1; transform: none; } }
+@keyframes float-y { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+
+.anim-rise { animation: rise-in 0.7s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.anim-rise-tilt { animation: rise-in-tilt 0.8s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.anim-slide-x { animation: slide-in-x 0.7s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.anim-float { animation: float-y 5s ease-in-out infinite; }
+
+/* Revealed when scrolled into view (see Reveal.tsx) */
+.reveal { opacity: 0; transform: translateY(18px); transition: opacity 0.55s cubic-bezier(0.22, 1, 0.36, 1), transform 0.55s cubic-bezier(0.22, 1, 0.36, 1); transition-delay: var(--reveal-delay, 0s); }
+.reveal.is-in { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  .reveal { opacity: 1; transform: none; }
+}

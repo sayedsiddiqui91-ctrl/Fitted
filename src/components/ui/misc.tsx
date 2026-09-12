@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { animate, motion, useMotionValue, useReducedMotion, useTransform } from "motion/react";
 import { cn } from "@/lib/utils";
 
 export function Badge({ children, tone = "neutral", className }: { children: ReactNode; tone?: "neutral" | "accent" | "success" | "warning" | "danger"; className?: string }) {
@@ -33,7 +32,7 @@ export function Segmented<T extends string>({ value, onChange, options, label, s
               active ? "text-fg" : "text-muted hover:text-fg",
             )}
           >
-            {active && <motion.span layoutId={`seg-${label}`} className="absolute inset-0 rounded-lg bg-surface shadow-sm ring-1 ring-border" transition={{ type: "spring", stiffness: 500, damping: 38 }} />}
+            {active && <span className="absolute inset-0 rounded-lg bg-surface shadow-sm ring-1 ring-border" />}
             <span className="relative flex items-center gap-1.5">
               {o.icon}
               {o.label}
@@ -56,35 +55,39 @@ export function scoreTone(n: number) {
 export function ScoreRing({ value, size = 132, stroke = 10, label, sublabel }: { value: number; size?: number; stroke?: number; label?: string; sublabel?: string }) {
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
-  const mv = useMotionValue(0);
-  const dash = useTransform(mv, (v) => `${(v / 100) * c} ${c}`);
-  const reduce = useReducedMotion();
-  const [display, setDisplay] = useState(0);
+  const [shown, setShown] = useState(0);
   useEffect(() => {
-    // Respect reduced-motion: show the final value immediately, no count-up
+    const reduce = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (reduce) {
-      mv.set(value);
-      setDisplay(value);
+      setShown(value);
       return;
     }
-    const controls = animate(mv, value, { duration: 1.1, ease: [0.22, 1, 0.36, 1], onUpdate: (v) => setDisplay(Math.round(v)) });
-    // A score is a fact, not decoration: if the count-up can't run (a background tab, a device where
-    // animation frames are throttled) the real number must still appear rather than a misleading 0.
-    const settle = window.setTimeout(() => {
-      mv.set(value);
-      setDisplay(value);
-    }, 1400);
+    // Count up over ~1.1s. A score is a fact, not decoration: if animation frames are throttled (a
+    // background tab, a busy phone) the timeout below still puts the real number on screen.
+    const from = 0;
+    const start = performance.now();
+    const DURATION = 1100;
+    let raf = 0;
+    const step = (now: number) => {
+      const t = Math.min(1, (now - start) / DURATION);
+      const eased = 1 - Math.pow(1 - t, 3);
+      setShown(Math.round(from + (value - from) * eased));
+      if (t < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    const settle = window.setTimeout(() => setShown(value), 1400);
     return () => {
-      controls.stop();
+      cancelAnimationFrame(raf);
       window.clearTimeout(settle);
     };
-  }, [value, mv, reduce]);
+  }, [value]);
   const tone = scoreTone(value);
+  const display = shown;
   return (
     <div className="relative inline-flex items-center justify-center" style={{ width: size, height: size }} role="img" aria-label={`${label ?? "Score"}: ${value} out of 100`}>
       <svg width={size} height={size} className="-rotate-90">
         <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--surface-3)" strokeWidth={stroke} />
-        <motion.circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={tone.color} strokeWidth={stroke} strokeLinecap="round" style={{ strokeDasharray: dash }} />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={tone.color} strokeWidth={stroke} strokeLinecap="round" style={{ strokeDasharray: `${(display / 100) * c} ${c}` }} />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <span className="font-semibold tabular-nums tracking-tight" style={{ fontSize: size * 0.27 }}>
@@ -98,6 +101,12 @@ export function ScoreRing({ value, size = 132, stroke = 10, label, sublabel }: {
 
 export function Bar({ value, label, note }: { value: number; label: string; note?: string }) {
   const tone = scoreTone(value);
+  // Grow from zero on the first paint after mount, in CSS
+  const [grown, setGrown] = useState(false);
+  useEffect(() => {
+    const t = window.setTimeout(() => setGrown(true), 20);
+    return () => window.clearTimeout(t);
+  }, []);
   return (
     <div>
       <div className="mb-1.5 flex items-center justify-between text-[13px]">
@@ -105,7 +114,7 @@ export function Bar({ value, label, note }: { value: number; label: string; note
         <span className="font-medium tabular-nums">{note ?? `${value}%`}</span>
       </div>
       <div className="h-1.5 overflow-hidden rounded-full bg-surface-3" role="progressbar" aria-valuenow={value} aria-valuemin={0} aria-valuemax={100} aria-label={label}>
-        <motion.div className="h-full rounded-full" style={{ background: tone.color }} initial={{ width: 0 }} animate={{ width: `${value}%` }} transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }} />
+        <div className="h-full rounded-full transition-[width] duration-[900ms] ease-[cubic-bezier(0.22,1,0.36,1)]" style={{ background: tone.color, width: `${grown ? value : 0}%` }} />
       </div>
     </div>
   );
