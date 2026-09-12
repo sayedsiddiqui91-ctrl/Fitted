@@ -13,7 +13,7 @@ const NAV = [
   { href: "/app", label: "My CVs", short: "CVs", icon: FileText, match: (p: string) => p === "/app" || p.startsWith("/app/new") },
   { href: "/app/optimize", label: "Job Optimizer", short: "Optimize", icon: Sparkles, match: (p: string) => p.startsWith("/app/optimize") },
   { href: "/app/pdf", label: "Edit PDF", short: "Edit PDF", icon: FilePen, match: (p: string) => p.startsWith("/app/pdf") },
-  { href: "/app/tracker", label: "Applications", short: "Apps", icon: Briefcase, match: (p: string) => p.startsWith("/app/tracker") },
+  { href: "/app/tracker", label: "Job Tracker", short: "Tracker", icon: Briefcase, match: (p: string) => p.startsWith("/app/tracker") },
   { href: "/app/settings", label: "Privacy & Data", short: "Privacy", icon: ShieldCheck, match: (p: string) => p.startsWith("/app/settings") },
 ];
 

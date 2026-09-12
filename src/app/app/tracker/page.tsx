@@ -59,8 +59,8 @@ export default function TrackerPage() {
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-8 sm:py-10">
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight sm:text-[28px]">Applications</h1>
-          <p className="mt-1 text-sm text-muted">A lightweight tracker — remember which CV you sent where.</p>
+          <h1 className="text-2xl font-semibold tracking-tight sm:text-[28px]">Job Tracker</h1>
+          <p className="mt-1 text-sm text-muted">Remember which CV you sent where, and what happened next.</p>
         </div>
         <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setEditing({ status: "applied", dateApplied: new Date().toISOString().slice(0, 10) })}>
           Add application
