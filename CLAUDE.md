@@ -3,6 +3,24 @@
 Free AI CV builder + job optimizer. Next.js 16 (App Router, Turbopack) · React 19 · TypeScript · Tailwind v4 · Zustand (IndexedDB, local-first) · zod.
 See `README.md` for the architecture table.
 
+## Picking this up in a new session
+Everything needed is in this repository — no chat history required.
+
+```bash
+git clone https://github.com/sayedsiddiqui91-ctrl/Fitted.git
+cd Fitted && npm install && npm run dev
+```
+
+Then open the folder in Claude Code and say what you want changed. Claude reads this file automatically.
+A good first message: *"Read CLAUDE.md, run npm test, then <the change>."*
+
+- **No `.env` is needed.** The whole app works on its on-device engine; AI keys are optional and deliberately
+  disabled in production (see the rule below).
+- **Shipping = pushing.** `git push origin main` and Vercel deploys it. Nothing else to click.
+- **Before you push:** `npm test` (must be green), `npm run typecheck`, `npm run build`.
+- The owner's standing instruction is to fix root causes and add a regression test, never to rebuild a feature
+  from scratch.
+
 ## Commands
 - `npm run dev` — dev server on http://localhost:3000
 - `npm test` — tsx test harness (`tests/run.ts`), must stay green
@@ -36,6 +54,19 @@ See `README.md` for the architecture table.
 ## Testing notes
 - The in-app browser pane often isn't painting: requestAnimationFrame/ResizeObserver/focus don't fire and the live
   CV preview may not mount. Drive the UI with JS and verify logic with `npm test` / tsx scripts.
+
+## Things that were hard to get right (don't undo them)
+- **PDF word spacing** (`src/lib/pdf/runs.ts`): some PDFs report glyph widths far too wide, so gaps between
+  words measure as zero. The page fits `advance = char x letters + space` from item positions and uses that
+  instead whenever text is reported as overlapping. Without it, "SMAC Advisory Ltd" imports as "SMACAdvisoryLtd".
+- **Wrapped bullets** (`parseResume.ts`, `DANGLING_END_RE`): a bullet ending on a conjunction continues onto the
+  next line, however short or capitalised that line looks — otherwise it becomes a phantom job title.
+- **Preview pagination** (`CVPreview.tsx`, `paginate()`): the page-break marker simulates `break-inside: avoid`,
+  so it matches the downloaded PDF. A fixed "one page height" marker does not.
+- **Only the visible editor panel is mounted below `lg`** (`app/cv/[id]/page.tsx`): a preview that mounts inside a
+  `display:none` panel measures 0 wide, renders nothing and never scrolls.
+- **Scores are facts**: every count-up animation has a timeout that puts the real number on screen even if
+  animation frames never run.
 
 ## Deployment
 - GitHub → Vercel (auto-deploys on every push to `main`).
