@@ -38,6 +38,63 @@ interface PreviewProps {
   maxScale?: number;
 }
 
+/** One thing that can't be split across two printed pages. */
+interface Block {
+  top: number;
+  height: number;
+  /** `break-inside: avoid` — a job, a degree, an entry. A long paragraph may be split. */
+  atomic: boolean;
+  /** `break-after: avoid` — a section heading must stay with what follows it. */
+  withNext: boolean;
+}
+
+/** Reads the laid-out CV as the blocks a printer has to keep together. */
+function readBlocks(page: HTMLElement): Block[] | null {
+  // Two-column templates paginate column by column; that isn't worth simulating, fall back to the estimate
+  if (page.querySelector(".cv-cols")) return null;
+  const pageTop = page.getBoundingClientRect().top;
+  // The preview is CSS-scaled, so convert every measurement back to real page units
+  const scale = page.getBoundingClientRect().width / (page.offsetWidth || 1) || 1;
+  const blocks: Block[] = [];
+  const add = (el: Element, atomic: boolean, withNext = false) => {
+    const r = el.getBoundingClientRect();
+    if (r.height < 0.5) return;
+    blocks.push({ top: (r.top - pageTop) / scale, height: r.height / scale, atomic, withNext });
+  };
+
+  const header = page.querySelector(":scope > .cv-header");
+  if (header) add(header, true);
+  page.querySelectorAll(":scope > .cv-section").forEach((sec) => {
+    const h2 = sec.querySelector(":scope > .cv-h2");
+    if (h2) add(h2, true, true);
+    const body = sec.querySelector(":scope > .cv-rail-body") ?? sec;
+    for (const child of Array.from(body.children)) {
+      if (child === h2) continue;
+      add(child, child.classList.contains("cv-item"));
+    }
+  });
+  return blocks.length ? blocks : null;
+}
+
+/** Where the printer will actually start each new page, in page units from the top of page 1. */
+export function paginate(blocks: Block[], firstTop: number, perPage: number): number[] {
+  const breaks: number[] = [];
+  let start = firstTop;
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i];
+    // A heading is carried by whatever follows it, so they move to the next page together
+    let end = b.top + b.height;
+    for (let j = i; blocks[j]?.withNext && blocks[j + 1]; j++) end = blocks[j + 1].top + blocks[j + 1].height;
+    const unbreakable = b.atomic || blocks[i].withNext;
+    if (!unbreakable || end - b.top > perPage) continue; // taller than a page: it has to be split anyway
+    if (end - start > perPage && b.top > start) {
+      breaks.push(b.top);
+      start = b.top;
+    }
+  }
+  return breaks;
+}
+
 /** Live, true-to-print preview. Measures content to estimate page count and marks page breaks. */
 export const CVPreview = memo(function CVPreview({ doc, zoom = "fit", onPages, showPlaceholders = true, className, maxScale = 1.15 }: PreviewProps) {
   useCvFont(doc.design.font);
@@ -45,6 +102,7 @@ export const CVPreview = memo(function CVPreview({ doc, zoom = "fit", onPages, s
   const inner = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
   const [contentH, setContentH] = useState(0);
+  const [breaks, setBreaks] = useState<number[]>([]);
   const { w, h, m, perPage } = pageMetrics(doc.design);
 
   useLayoutEffect(() => {
@@ -79,6 +137,12 @@ export const CVPreview = memo(function CVPreview({ doc, zoom = "fit", onPages, s
       const last = kids[kids.length - 1];
       const bottom = last ? last.offsetTop + last.offsetHeight : 0;
       setContentH(bottom + m);
+      // Where the PDF will really break: a job or a degree is never split down the middle, so one that
+      // doesn't fit moves to the next page whole. Marking the naive cut instead used to promise a page 1
+      // that the download didn't deliver.
+      const blocks = readBlocks(page);
+      const next = blocks ? paginate(blocks, m, perPage) : [];
+      setBreaks((prev) => (prev.length === next.length && prev.every((v, i) => Math.abs(v - next[i]) < 0.5) ? prev : next));
     };
     measure();
     const ro = new ResizeObserver(measure);
@@ -88,9 +152,10 @@ export const CVPreview = memo(function CVPreview({ doc, zoom = "fit", onPages, s
     return () => ro.disconnect();
     // `width` is a dependency because nothing is rendered until it is known — without it the page count
     // would be measured against an empty preview and always come out as one page.
-  }, [doc, m, width]);
+  }, [doc, m, perPage, width]);
 
-  const pages = Math.max(1, Math.ceil((contentH - 2 * m - 2) / perPage));
+  const estimate = Math.max(1, Math.ceil((contentH - 2 * m - 2) / perPage));
+  const pages = Math.max(estimate, breaks.length + 1);
   useEffect(() => {
     onPages?.(pages);
   }, [pages, onPages]);
@@ -108,8 +173,8 @@ export const CVPreview = memo(function CVPreview({ doc, zoom = "fit", onPages, s
               <CVDocument doc={doc} showPlaceholders={showPlaceholders} />
             </div>
           </div>
-          {Array.from({ length: pages - 1 }, (_, i) => (
-            <div key={i} className="pointer-events-none absolute inset-x-0 flex items-center" style={{ top: (m + (i + 1) * perPage) * scale }} aria-hidden>
+          {Array.from({ length: pages - 1 }, (_, i) => breaks[i] ?? m + (i + 1) * perPage).map((top, i) => (
+            <div key={i} className="pointer-events-none absolute inset-x-0 flex items-center" style={{ top: top * scale }} aria-hidden>
               <div className="h-px flex-1 border-t border-dashed border-accent/50" />
               <span className="mx-2 rounded-full bg-accent px-2 py-0.5 text-[10px] font-medium text-accent-fg shadow-sm">Page {i + 2}</span>
               <div className="h-px flex-1 border-t border-dashed border-accent/50" />

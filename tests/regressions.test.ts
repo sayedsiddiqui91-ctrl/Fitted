@@ -22,6 +22,7 @@ import { analyzeCV } from "../src/lib/engine/cvAnalysis";
 import { parseResumeText } from "../src/lib/engine/parseResume";
 import { looksLikeAddress } from "../src/lib/engine/personalInfo";
 import { buildRuns } from "../src/lib/pdf/runs";
+import { paginate } from "../src/components/cv/CVPreview";
 
 // Found during in-browser end-to-end testing
 const JD = `Senior Finance Analyst
@@ -535,6 +536,38 @@ suite("Import: PDFs that report the wrong glyph widths", () => {
       return it;
     });
     expect(buildRuns(items, 0, () => ({}))[0].text === "PowerPoint2024", `got “${buildRuns(items, 0, () => ({}))[0].text}”`);
+  });
+});
+
+suite("The preview's page break is where the PDF really breaks", () => {
+  // Page units: A4 at 12mm margins ≈ 45 top, 988 usable per page.
+  const TOP = 45;
+  const PER = 988;
+  const entry = (top: number, height: number) => ({ top, height, atomic: true, withNext: false });
+  const heading = (top: number, height = 18) => ({ top, height, atomic: true, withNext: true });
+
+  test("an entry that would be cut in half moves to the next page whole", () => {
+    // "Secondary School Certificate" starts at 990 and runs past the bottom of page 1
+    const blocks = [entry(TOP, 900), entry(960, 30), entry(1000, 60), entry(1070, 60)];
+    const breaks = paginate(blocks, TOP, PER);
+    expect(breaks.length === 1, `expected one break, got ${JSON.stringify(breaks)}`);
+    expect(breaks[0] === 1000, `page 2 should start at the entry that didn't fit (1000), got ${breaks[0]}`);
+  });
+
+  test("a section heading is never left alone at the foot of a page", () => {
+    // The heading itself fits, but the entry under it does not — both move together
+    const blocks = [entry(TOP, 940), heading(1000), entry(1025, 80)];
+    const breaks = paginate(blocks, TOP, PER);
+    expect(breaks.length === 1 && breaks[0] === 1000, `heading should start page 2, got ${JSON.stringify(breaks)}`);
+  });
+
+  test("content that fits on one page produces no break at all", () => {
+    expect(paginate([entry(TOP, 400), entry(460, 300)], TOP, PER).length === 0, "no break expected");
+  });
+
+  test("a block taller than a whole page is split rather than pushed forever", () => {
+    const breaks = paginate([entry(TOP, 100), entry(150, 1500), entry(1700, 50)], TOP, PER);
+    expect(breaks.length <= 1, `a too-tall block must not push a break per page: ${JSON.stringify(breaks)}`);
   });
 });
 
