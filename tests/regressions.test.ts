@@ -20,6 +20,7 @@ import { headingStyleMatcher, inferDesign, mapFont } from "../src/lib/import/des
 import type { PdfTextRun } from "../src/lib/pdf/types";
 import { analyzeCV } from "../src/lib/engine/cvAnalysis";
 import { parseResumeText } from "../src/lib/engine/parseResume";
+import { looksLikeAddress } from "../src/lib/engine/personalInfo";
 
 // Found during in-browser end-to-end testing
 const JD = `Senior Finance Analyst
@@ -484,6 +485,29 @@ suite("Free to run: paid AI can't switch itself on", () => {
   });
 });
 
+suite("Job posting written as prose, not bullets", () => {
+  const JD = [
+    "Backend Engineer — Fintech Ltd, Dhaka",
+    "",
+    "We are looking for a backend engineer with strong .NET and C# experience. You will build REST and GraphQL APIs and work with Docker. Requirements: 2+ years with .NET, SQL, Git, Agile. Nice to have: Angular, Kubernetes, Azure.",
+  ].join("\n");
+
+  test("a required list and a nice-to-have list in one paragraph stay apart", () => {
+    const a = analyzeJobDescription(JD);
+    expect(a.requiredSkills.includes(".NET"), `.NET should be required, got required=${JSON.stringify(a.requiredSkills)}`);
+    expect(a.requiredSkills.includes("SQL") && a.requiredSkills.includes("Git"), `required=${JSON.stringify(a.requiredSkills)}`);
+    for (const nice of ["Angular", "Kubernetes", "Azure"]) {
+      expect(a.preferredSkills.includes(nice), `${nice} should be preferred, got ${JSON.stringify(a.preferredSkills)}`);
+      expect(!a.requiredSkills.includes(nice), `${nice} must not be required`);
+    }
+  });
+
+  test("a requirement written as prose still counts as required", () => {
+    const a = analyzeJobDescription(JD);
+    expect(a.requiredSkills.includes("C#"), `"strong .NET and C# experience" should make C# required, got ${JSON.stringify(a.requiredSkills)}`);
+  });
+});
+
 suite("Import: a dense technical CV", () => {
   // Shaped like a real software-engineering CV: long bullets that wrap onto a second line,
   // a projects list with one project per bullet, and a phone number that looks like a date range.
@@ -544,6 +568,14 @@ suite("Import: a dense technical CV", () => {
     expect(e.field === "Computer Science and Engineering", `field was “${e.field}”`);
     expect(/American International University/.test(e.school), `school was “${e.school}”`);
     expect(/3\.94/.test(e.grade), `grade was “${e.grade}”`);
+  });
+
+  test("ordinary CV prose is not mistaken for a postal address", () => {
+    // "building scalable APIs" and "state of the art" are not addresses; "G-block, Bashundhara" is.
+    const prose = ["Full-stack Software Engineer at A4Aero Limited building scalable .NET 8 APIs and Angular applications.", "Delivered state of the art analytics for a district heating client.", "Led a 5-person team building Django services."];
+    for (const s of prose) expect(!looksLikeAddress(s), `treated as an address: “${s}”`);
+    const addresses = ["G-block, Bashundhara R/A, Dhaka, Bangladesh", "House 12, Road 5, Dhanmondi, Dhaka", "Rangs Building, 5th Floor, Tejgaon, Dhaka"];
+    for (const s of addresses) expect(looksLikeAddress(s), `not recognized as an address: “${s}”`);
   });
 
   test("a phone number is never read as a date range", () => {

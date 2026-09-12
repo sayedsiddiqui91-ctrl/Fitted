@@ -68,7 +68,16 @@ export function ScoreRing({ value, size = 132, stroke = 10, label, sublabel }: {
       return;
     }
     const controls = animate(mv, value, { duration: 1.1, ease: [0.22, 1, 0.36, 1], onUpdate: (v) => setDisplay(Math.round(v)) });
-    return () => controls.stop();
+    // A score is a fact, not decoration: if the count-up can't run (a background tab, a device where
+    // animation frames are throttled) the real number must still appear rather than a misleading 0.
+    const settle = window.setTimeout(() => {
+      mv.set(value);
+      setDisplay(value);
+    }, 1400);
+    return () => {
+      controls.stop();
+      window.clearTimeout(settle);
+    };
   }, [value, mv, reduce]);
   const tone = scoreTone(value);
   return (

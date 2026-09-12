@@ -146,10 +146,28 @@ function extractPhrases(lines: string[], known: Set<string>): string[] {
     .map(([g]) => g.replace(/\b\w/g, (c) => c.toUpperCase()));
 }
 
+/* Not every posting uses bullet points. "…build REST APIs. Requirements: 2+ years with .NET, SQL.
+   Nice to have: Angular." is one paragraph holding a required list AND a preferred list — splitting it
+   at the cue words keeps ".NET" a requirement instead of lumping the whole line under "nice to have". */
+const INLINE_CUE = /(?=\b(?:requirements?|responsibilities|qualifications?|must[- ]haves?|what you(?:'|’)ll do|what we(?:'|’)re looking for|nice to have|preferred|bonus|desirable|a plus|plus(?:es)?)\b\s*:)/i;
+
+export function splitAtInlineCues(line: string): string[] {
+  const t = line.trim();
+  if (t.length < 60 || !INLINE_CUE.test(t.slice(1))) return [t];
+  // Break the paragraph into sentences first, then start a new line wherever a cue begins
+  const out: string[] = [];
+  for (const sentence of t.split(/(?<=[.;])\s+/)) {
+    const parts = sentence.split(INLINE_CUE).filter((p) => p.trim());
+    out.push(...parts.map((p) => p.trim()));
+  }
+  return out.length ? out : [t];
+}
+
 export function analyzeJobDescription(raw: string): JobAnalysis {
   const text = raw.replace(/\r/g, "").replace(/\t/g, " ");
   const lines = text
     .split("\n")
+    .flatMap(splitAtInlineCues)
     .map((l) => l.trim())
     .filter(Boolean);
 
@@ -179,7 +197,14 @@ export function analyzeJobDescription(raw: string): JobAnalysis {
     let b: Bucket = bucket;
     if (b !== "other") {
       if (PREF_CUE.test(l)) b = "pref";
-      else if (b === "none") b = REQ_CUE.test(l) || /\b(years?|degree|experience (with|in)|proficien|knowledge of)\b/i.test(l) ? "req" : startsWithVerb(l) ? "resp" : "none";
+      // "…with strong .NET and C# experience" is a requirement written as prose, not just an overview
+      else if (b === "none")
+        b =
+          REQ_CUE.test(l) || /\b(years?|degree|experience (with|in)|proficien|knowledge of)\b/i.test(l) || /\b(strong|solid|proven|hands[- ]on|extensive|deep|excellent)\s+(?:\S+\s+){0,4}(experience|skills|background|command)\b/i.test(l)
+            ? "req"
+            : startsWithVerb(l)
+              ? "resp"
+              : "none";
     }
     tagged.push({ line: stripBullet(l), bucket: b });
   }

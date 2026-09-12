@@ -6,8 +6,27 @@ import type { CVContent } from "@/lib/cv/schema";
 export const ROLE_WORD =
   /\b(analyst|manager|engineer|developer|specialist|assistant|coordinator|consultant|officer|executive|associate|intern|internship|director|designer|accountant|administrator|clerk|representative|technician|teacher|nurse|scientist|architect|advis[oe]r|supervisor|agent|editor|writer|marketer|strategist|controller|auditor|bookkeeper|student|graduate|lead|head of|researcher|founder|owner|partner|trainee|professional|tutor|lecturer|programmer|officer)\b/i;
 
-const ADDRESS_WORD =
-  /(\b|-)(block|blk|road|rd\.?|street|st\.|avenue|ave\.?|lane|ln\.?|house|flat|apt\.?|apartment|suite|floor|sector|r\/a|residential area|district|village|po box|p\.?o\.?|zip|postcode|post code|nagar|colony|thana|upazila|division|state|province|county|building|bldg|plot|holding)\b/i;
+/* Words that only ever appear in an address. */
+const ADDRESS_WORD_STRONG =
+  /(\b|-)(road|rd\.?|street|st\.|avenue|ave\.?|lane|ln\.?|flat|apt\.?|apartment|r\/a|residential area|village|po box|p\.?o\.?|zip|postcode|post code|nagar|colony|thana|upazila)\b/i;
+
+/* Words that are part of an address only next to a number or a block letter — "Building 7", "G-block",
+   "5th Floor". In CV prose they are ordinary words ("building scalable APIs", "state of the art"). */
+const ADDRESS_WORD_WEAK = /(\b|-)(block|blk|house|suite|floor|sector|district|division|state|province|county|building|bldg|plot|holding)\b/i;
+
+function weakAddressHit(t: string): boolean {
+  const m = ADDRESS_WORD_WEAK.exec(t);
+  if (!m) return false;
+  const prev = t.slice(0, m.index).replace(/[\s,.;:-]+$/, "").split(/\s+/).pop() ?? "";
+  const next = t.slice(m.index + m[0].length).replace(/^[\s,.;:-]+/, "").split(/\s+/)[0] ?? "";
+  const marker = (s: string) => {
+    const w = s.replace(/[,.;:]/g, "");
+    return /^#?\d/.test(w) || /^[A-Z]$/.test(w) || /^[A-Z]-?$/.test(w);
+  };
+  return marker(prev) || marker(next);
+}
+
+const ADDRESS_WORD = { test: (t: string) => ADDRESS_WORD_STRONG.test(t) || weakAddressHit(t) };
 
 const COUNTRY =
   /\b(bangladesh|india|pakistan|sri lanka|nepal|united states|usa|u\.s\.a?\.?|united kingdom|uk|england|scotland|wales|ireland|canada|australia|new zealand|germany|france|spain|italy|netherlands|belgium|sweden|norway|denmark|finland|poland|portugal|switzerland|austria|uae|united arab emirates|saudi arabia|qatar|kuwait|oman|bahrain|egypt|nigeria|kenya|south africa|ghana|singapore|malaysia|indonesia|philippines|vietnam|thailand|china|japan|korea|hong kong|taiwan|brazil|mexico|argentina|chile|colombia|turkey)\s*\.?$/i;
