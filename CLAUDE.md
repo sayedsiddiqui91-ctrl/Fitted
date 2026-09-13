@@ -65,11 +65,16 @@ A good first message: *"Read CLAUDE.md, run npm test, then <the change>."*
   so it matches the downloaded PDF. A fixed "one page height" marker does not.
 - **Only the visible editor panel is mounted below `lg`** (`app/cv/[id]/page.tsx`): a preview that mounts inside a
   `display:none` panel measures 0 wide, renders nothing and never scrolls.
+- **PDF editor redraws** (`app/pdf/[id]/page.tsx`): a page's canvas is keyed to the edits the *displayed* PDF was
+  built from (`viewEdits`), not the latest edits. Keying to the latest ones made changes show only in the download.
+- **Answers become bullets through `noteToBullet()`** (`rewrite.ts`): the user's words plus an opening verb and the
+  confirmed skill — never numbers, tools or results that weren't in the note.
 - **Scores are facts**: every count-up animation has a timeout that puts the real number on screen even if
   animation frames never run.
 
 ## Deployment
 - GitHub → Vercel (auto-deploys on every push to `main`).
-- Known limit on Vercel: server PDF export (`/api/pdf`) needs a local Chrome, so it falls back to the browser's
-  print-to-PDF. Fix later with `@sparticuz/chromium` + `puppeteer-core` if needed.
+- Server PDF export (`/api/pdf`) uses `@sparticuz/chromium` + `puppeteer-core` on Vercel and full `puppeteer`
+  locally. The two versions are **pinned together** (Chromium 152 ↔ puppeteer-core 25.10.0) — upgrade them as a
+  pair or launches fail. Without it, phones got a print dialog that many of them (and every in-app browser) ignore.
 - Scanned-PDF OCR (tesseract.js) downloads its engine from a public CDN the first time.
