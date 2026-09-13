@@ -2,10 +2,11 @@
 
 import { useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowRight, Check, CheckCheck, Columns2, HelpCircle, Pencil, RotateCcw, ShieldAlert, ShieldCheck, Undo2, X, XCircle } from "lucide-react";
+import { ArrowRight, Check, CheckCheck, Columns2, HelpCircle, Pencil, RotateCcw, ShieldAlert, ShieldCheck, Sparkles, Undo2, X, XCircle } from "lucide-react";
 import type { CVDoc } from "@/lib/cv/schema";
 import type { Change, OptimizationPlan, Question } from "@/lib/ai/types";
 import { diffWords } from "@/lib/engine/diff";
+import { noteToBullet, prefersPresent } from "@/lib/engine/rewrite";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import { Dialog } from "@/components/ui/Dialog";
@@ -197,6 +198,15 @@ function QuestionCard({ q, doc, onAnswer }: { q: Question; doc: CVDoc; onAnswer:
   const [itemId, setItemId] = useState(q.detailItemId ?? doc.content.experience[0]?.id ?? "");
   const answered = !!q.answer;
   const [editing, setEditing] = useState(!answered);
+  /** A CV-ready version of what the user typed, shown for them to accept — never applied silently */
+  const [suggestion, setSuggestion] = useState<string | null>(null);
+
+  const improveNote = () => {
+    const target = doc.content.experience.find((e) => e.id === itemId) ?? doc.content.experience[0];
+    const bullets = target?.bullets.map((b) => b.text) ?? [];
+    const endWithPeriod = bullets.length ? bullets.filter((b) => /\.\s*$/.test(b)).length >= bullets.length / 2 : true;
+    setSuggestion(noteToBullet(detail, { keyword: q.keyword, current: !!target?.current && prefersPresent(bullets), endWithPeriod }));
+  };
 
   if (answered && !editing) {
     const label = q.options.find((o) => o.value === q.answer)?.label ?? q.answer;
@@ -257,7 +267,48 @@ function QuestionCard({ q, doc, onAnswer }: { q: Question; doc: CVDoc; onAnswer:
           <label className="text-[13px] font-medium text-muted" htmlFor={`d-${q.id}`}>
             Briefly describe it (optional) — we'll only use what you write
           </label>
-          <Textarea id={`d-${q.id}`} rows={2} value={detail} onChange={(e) => setDetail(e.target.value)} placeholder="e.g. Built a 3-statement forecast model in Excel for the annual budget" />
+          <Textarea
+            id={`d-${q.id}`}
+            rows={2}
+            value={detail}
+            onChange={(e) => {
+              setDetail(e.target.value);
+              setSuggestion(null);
+            }}
+            placeholder="Write it however you like — e.g. monthly mgmt reports for the directors"
+          />
+          {detail.trim().length >= 6 && !suggestion && (
+            <div>
+              <Button size="sm" variant="secondary" icon={<Sparkles className="size-4" />} onClick={improveNote}>
+                Improve with assistant
+              </Button>
+              <p className="mt-1.5 text-xs text-subtle">Turns your note into a CV bullet using only what you wrote — nothing invented.</p>
+            </div>
+          )}
+          {suggestion && (
+            <div className="rounded-xl border border-accent/30 bg-accent-soft/40 p-3" aria-live="polite">
+              <p className="flex items-center gap-1.5 text-xs font-medium text-accent-soft-fg">
+                <Sparkles className="size-3.5" aria-hidden /> Suggested bullet
+              </p>
+              <p className="mt-1.5 text-sm leading-relaxed">{suggestion}</p>
+              <div className="mt-2.5 flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="primary"
+                  icon={<Check className="size-4" />}
+                  onClick={() => {
+                    setDetail(suggestion);
+                    setSuggestion(null);
+                  }}
+                >
+                  Use this
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setSuggestion(null)}>
+                  Keep mine
+                </Button>
+              </div>
+            </div>
+          )}
           {detail.trim() && doc.content.experience.length > 0 && (
             <div className="max-w-sm">
               <label className="mb-1 block text-[13px] font-medium text-muted" htmlFor={`r-${q.id}`}>

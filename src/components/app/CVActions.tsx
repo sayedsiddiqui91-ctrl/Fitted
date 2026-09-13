@@ -5,7 +5,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Copy, Download, FileText, MoreHorizontal, Pencil, Sparkles, Trash2 } from "lucide-react";
 import { useStore } from "@/lib/store";
-import { downloadPdf } from "@/lib/export/pdf";
+import { downloadPdf, pdfOutcomeMessage } from "@/lib/export/pdf";
 import type { CVDoc } from "@/lib/cv/schema";
 import { Menu, MenuItem, MenuSeparator } from "@/components/ui/Menu";
 import { ConfirmDialog, PromptDialog } from "@/components/ui/Dialog";
@@ -63,8 +63,9 @@ export function CVActionsMenu({ doc, trigger }: { doc: CVDoc; trigger?: React.Re
           icon={<Download />}
           onSelect={async () => {
             const t = toast.loading("Preparing your PDF…");
-            const mode = await downloadPdf(doc);
-            toast.success(mode === "download" ? "PDF downloaded" : "Choose “Save as PDF” in the print dialog", { id: t });
+            const msg = pdfOutcomeMessage(await downloadPdf(doc));
+            if (msg.tone === "success") toast.success(msg.title, { id: t, description: msg.description });
+            else toast(msg.title, { id: t, description: msg.description, duration: 9000 });
           }}
         >
           Download PDF

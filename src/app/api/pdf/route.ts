@@ -7,7 +7,7 @@ export const maxDuration = 60;
    The CV is rendered in memory and never stored. The page runs with
    JavaScript disabled and can only load Google Fonts — nothing else. */
 
-type Browser = import("puppeteer").Browser;
+type Browser = import("puppeteer-core").Browser;
 let browserPromise: Promise<Browser> | null = null;
 
 /** Use an explicitly configured browser, Puppeteer's bundled Chrome, or a locally installed Chrome/Edge. */
@@ -31,6 +31,20 @@ async function findExecutable(): Promise<string | undefined> {
 async function getBrowser(): Promise<Browser> {
   if (!browserPromise) {
     browserPromise = (async () => {
+      /* On Vercel (and any serverless host) there is no Chrome installed. Without one this route failed and
+         every download fell back to the browser's print dialog — which many phones and in-app browsers
+         (Messenger, Facebook, Instagram) silently ignore, so tapping Download did nothing at all.
+         @sparticuz/chromium ships a Chromium built for serverless functions; its version is pinned to
+         match puppeteer-core (Chrome 152). */
+      if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+        const chromium = (await import("@sparticuz/chromium")).default;
+        const core = (await import("puppeteer-core")).default;
+        return core.launch({
+          args: await core.defaultArgs({ args: [...chromium.args, "--font-render-hinting=none"], headless: "shell" }),
+          executablePath: await chromium.executablePath(),
+          headless: "shell",
+        });
+      }
       const p = (await import("puppeteer")).default;
       const args = ["--no-sandbox", "--disable-dev-shm-usage", "--font-render-hinting=none"];
       try {
@@ -66,7 +80,7 @@ export async function POST(req: Request) {
     return Response.json({ error: "Invalid request." }, { status: 400 });
   }
 
-  let page: import("puppeteer").Page | null = null;
+  let page: import("puppeteer-core").Page | null = null;
   try {
     const browser = await getBrowser();
     page = await browser.newPage();

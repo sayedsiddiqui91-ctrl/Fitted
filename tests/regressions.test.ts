@@ -23,6 +23,8 @@ import { parseResumeText } from "../src/lib/engine/parseResume";
 import { looksLikeAddress } from "../src/lib/engine/personalInfo";
 import { buildRuns } from "../src/lib/pdf/runs";
 import { paginate } from "../src/components/cv/CVPreview";
+import { noteToBullet } from "../src/lib/engine/rewrite";
+import { pdfOutcomeMessage } from "../src/lib/export/pdf";
 
 // Found during in-browser end-to-end testing
 const JD = `Senior Finance Analyst
@@ -536,6 +538,50 @@ suite("Import: PDFs that report the wrong glyph widths", () => {
       return it;
     });
     expect(buildRuns(items, 0, () => ({}))[0].text === "PowerPoint2024", `got “${buildRuns(items, 0, () => ({}))[0].text}”`);
+  });
+});
+
+suite("Optimizer: turning a short answer into a CV bullet", () => {
+  const bullet = (note: string, keyword: string, current = false) => noteToBullet(note, { keyword, current, endWithPeriod: true });
+
+  test("a rough note becomes a proper bullet with an action verb", () => {
+    expect(bullet("yes i did monthly mgmt reports for the directors", "Management reporting") === "Prepared monthly management reports for the directors.", bullet("yes i did monthly mgmt reports for the directors", "Management reporting"));
+    expect(bullet("helped the finance team build the annual budget in excel", "Budgeting") === "Supported the finance team in building the annual budget in Excel.", bullet("helped the finance team build the annual budget in excel", "Budgeting"));
+  });
+
+  test("tense follows the role: present for a current role", () => {
+    expect(/^Prepare monthly/.test(bullet("monthly management reports for directors", "Management reporting", true)), bullet("monthly management reports for directors", "Management reporting", true));
+  });
+
+  test("tools get their real spelling", () => {
+    expect(bullet("used power bi for sales dashboards", "Power BI").includes("Power BI"), bullet("used power bi for sales dashboards", "Power BI"));
+  });
+
+  test("never invents facts: no new numbers, and only the confirmed skill is ever added", () => {
+    const notes = ["did the budget with the ops team", "variance analysis for the CFO", "handled supplier invoices"];
+    for (const n of notes) {
+      const out = bullet(n, "Forecasting");
+      expect(!/\d/.test(out), `a number appeared: “${out}”`);
+      const added = out.toLowerCase().split(/\W+/).filter((w) => w.length > 3 && !n.toLowerCase().includes(w));
+      // Allowed additions: an opening verb and the confirmed skill
+      expect(added.length <= 3, `too many new words in “${out}”: ${added.join(", ")}`);
+    }
+  });
+
+  test("the skill is not tacked on when the note already covers it", () => {
+    const out = bullet("I prepared variance analysis for the CFO every quarter", "Financial analysis");
+    expect(!/supporting financial analysis/i.test(out), out);
+  });
+});
+
+suite("Download on phones and in-app browsers", () => {
+  test("an in-app browser gets told how to download, not a silent failure", () => {
+    const m = pdfOutcomeMessage("in-app");
+    expect(/Chrome or Safari/.test(m.title), m.title);
+  });
+  test("the print fallback explains Save as PDF, including on iPhone", () => {
+    const m = pdfOutcomeMessage("print");
+    expect(/Save as PDF/.test(m.title) && /iPhone/.test(m.description ?? ""), `${m.title} — ${m.description}`);
   });
 });
 

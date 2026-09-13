@@ -6,7 +6,7 @@ import { analyzeCV, evidenceFor, type BulletRef, type CVFacts } from "./cvAnalys
 import { guardText } from "./guard";
 import { buildTailoredSummary, polishSummary, summaryScore } from "./summaryWriter";
 import { validatePlan } from "./sectionValidator";
-import { prefersPresent, rewriteBullet, toGerundClause } from "./rewrite";
+import { noteToBullet, prefersPresent, rewriteBullet, toGerundClause } from "./rewrite";
 import { indexText, joinList, lookupTerm, lowerFirst, sentenceCase, similarity, textHasTerm } from "./text";
 import { STRONG_VERBS } from "./verbs";
 
@@ -348,8 +348,8 @@ export function applyAnswer(plan: OptimizationPlan, question: Question, content:
       const detail = question.detail?.trim();
       const targetItem = content.experience.find((e) => e.id === question.detailItemId) ?? content.experience[0];
       if (detail && detail.length > 8 && targetItem) {
-        let text = sentenceCase(detail.replace(/^[•\-*]\s*/, "").replace(/^i\s+/i, ""));
-        text = rewriteBullet(text, { current: targetItem.current && prefersPresent(targetItem.bullets.map((x) => x.text)), mode: "conservative", endWithPeriod: period }).text;
+        // Same writer as "Improve with assistant": a rough note becomes a CV bullet from the user's own words
+        const text = noteToBullet(detail, { keyword: kw, current: targetItem.current && prefersPresent(targetItem.bullets.map((x) => x.text)), endWithPeriod: period });
         changes.push(
           mk({
             kind: "add-bullet",

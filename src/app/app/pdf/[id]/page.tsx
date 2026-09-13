@@ -58,6 +58,8 @@ function PdfEditor({ doc }: { doc: PdfDoc }) {
   const [original, setOriginal] = useState<Uint8Array | null>(null);
   const [origPdf, setOrigPdf] = useState<PDFDocumentProxy | null>(null);
   const [viewPdf, setViewPdf] = useState<PDFDocumentProxy | null>(null);
+  /** The edits `viewPdf` was actually built from — it lags `doc.edits` while a rebuild is in flight */
+  const [viewEdits, setViewEdits] = useState<PdfEdit[]>([]);
   const [runs, setRuns] = useState<PdfTextRun[]>([]);
   const [pageWidth, setPageWidth] = useState(595);
   const [pageSizes, setPageSizes] = useState<{ w: number; h: number }[]>([]);
@@ -108,6 +110,7 @@ function PdfEditor({ doc }: { doc: PdfDoc }) {
     if (!original || !origPdf) return;
     if (!doc.edits.length) {
       setViewPdf(origPdf);
+      setViewEdits([]);
       setWarnings([]);
       return;
     }
@@ -115,10 +118,12 @@ function PdfEditor({ doc }: { doc: PdfDoc }) {
     const t = setTimeout(() => {
       const regen = async () => {
         try {
-          const res = await applyPdfEdits(original, doc.edits, { scanned });
+          const built = doc.edits;
+          const res = await applyPdfEdits(original, built, { scanned });
           const pdf = await openPdf(res.bytes);
           if (cancelled) return;
           setViewPdf(pdf);
+          setViewEdits(built);
           setWarnings(res.warnings);
         } catch {
           if (!cancelled) toast.error("We couldn't preview that change. Try undoing it.");
@@ -234,14 +239,17 @@ function PdfEditor({ doc }: { doc: PdfDoc }) {
   const perPage = useMemo(() => {
     const out: { runs: PdfTextRun[]; edits: PdfEdit[]; sig: string }[] = Array.from({ length: doc.pages }, () => ({ runs: [], edits: [], sig: "" }));
     for (const r of runs) out[r.page]?.runs.push(r);
-    for (const e of doc.edits) {
+    for (const e of doc.edits) out[e.page]?.edits.push(e);
+    /* The canvas signature comes from the edits the displayed PDF was BUILT from, not the latest ones.
+       Signing with the latest edits redrew the page from the old PDF the moment you typed, marked it
+       up to date, and then skipped the real redraw when the rebuilt PDF arrived — so changes only showed
+       up in the download. */
+    for (const e of viewEdits) {
       const p = out[e.page];
-      if (!p) continue;
-      p.edits.push(e);
-      p.sig += `${e.id}:${e.kind}:${e.text}:${e.x}:${e.y}:${e.fontSize}:${e.bold}:${e.italic}:${e.family}|`;
+      if (p) p.sig += `${e.id}:${e.kind}:${e.text}:${e.x}:${e.y}:${e.fontSize}:${e.bold}:${e.italic}:${e.family}:${e.color?.join(",")}|`;
     }
     return out;
-  }, [runs, doc.edits, doc.pages]);
+  }, [runs, doc.edits, doc.pages, viewEdits]);
 
   const onSelectEdit = useCallback((e: PdfEdit) => {
     setSelected(e.id);

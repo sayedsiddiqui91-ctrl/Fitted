@@ -35,7 +35,7 @@ import {
 import { familyOf, useCV, useStore } from "@/lib/store";
 import type { CVDoc } from "@/lib/cv/schema";
 import { templateMeta } from "@/lib/cv/meta";
-import { downloadPdf, printCv } from "@/lib/export/pdf";
+import { downloadPdf, pdfOutcomeMessage, printCv } from "@/lib/export/pdf";
 import { downloadDocx } from "@/lib/export/docx";
 import { cn } from "@/lib/utils";
 import { useIsDesktop } from "@/lib/useMediaQuery";
@@ -269,9 +269,9 @@ function TopBar({ doc, canUndo, canRedo, onUndo, onRedo, onReview, onAssistant }
   const exportPdf = async () => {
     setExporting(true);
     try {
-      const mode = await downloadPdf(doc);
-      if (mode === "download") toast.success("PDF downloaded", { description: "Free, no watermark. Good luck!" });
-      else toast("Choose “Save as PDF” in the print dialog", { description: "Tip: turn off “Headers and footers”." });
+      const msg = pdfOutcomeMessage(await downloadPdf(doc));
+      if (msg.tone === "success") toast.success(msg.title, { description: msg.description });
+      else toast(msg.title, { description: msg.description, duration: 9000 });
     } catch {
       toast.error("We couldn't create the PDF", { description: "Try again, or use Print → Save as PDF." });
     } finally {

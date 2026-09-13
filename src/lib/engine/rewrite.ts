@@ -1,5 +1,5 @@
 import { NOMINALIZATIONS, WEAK_OPENERS, verbFromAny, verbFromBase, verbFromGerund, verbFromPast } from "./verbs";
-import { lookupTerm, sentenceCase } from "./text";
+import { findTerms, indexText, lookupTerm, sentenceCase, textHasTerm } from "./text";
 
 export interface RewriteOptions {
   current: boolean;
@@ -170,4 +170,96 @@ export function shorten(text: string): string {
   }
   t = sentenceCase(t.replace(/[.;,]+$/, ""));
   return /\.$/.test(text.trim()) ? `${t}.` : t;
+}
+
+export interface NoteToBulletOptions {
+  /** The skill the user just confirmed ("Management reporting") — the one term we may add */
+  keyword?: string;
+  /** Present tense for a current role that is written in present tense */
+  current: boolean;
+  endWithPeriod: boolean;
+}
+
+/* Words that tell us what kind of work a noun-phrase note describes, so it can open with a fitting verb.
+   The verb is the only word introduced; everything else comes from the user's note. */
+const NOUN_VERBS: [RegExp, { present: string; past: string }][] = [
+  // comparisons are prepared ("budget vs actual", "variances"), even though they mention a budget
+  [/\b(vs\.?|versus|variances?|comparisons?|reconciliation reports?)\b/i, { present: "Prepare", past: "Prepared" }],
+  [/\b(reports?|reporting|statements?|summar(?:y|ies)|packs?|presentations?|documentation|memos?|papers?)\b/i, { present: "Prepare", past: "Prepared" }],
+  [/\b(dashboards?|models?|tools?|trackers?|templates?|spreadsheets?|macros?|pipelines?|apps?|systems?|websites?)\b/i, { present: "Build", past: "Built" }],
+  [/\b(budgets?|budgeting|forecasts?|forecasting|plans?|planning)\b/i, { present: "Support", past: "Supported" }],
+  [/\b(analysis|analytics|data|variances?|trends?|research)\b/i, { present: "Analyze", past: "Analyzed" }],
+  [/\b(reconciliations?|invoices?|payments?|payroll|accounts?|ledgers?|journals?|entries|close|closing)\b/i, { present: "Process", past: "Processed" }],
+  [/\b(vendors?|suppliers?|clients?|customers?|stakeholders?|teams?|projects?|processes|operations|workflows?)\b/i, { present: "Manage", past: "Managed" }],
+  [/\b(audits?|compliance|controls?|reviews?)\b/i, { present: "Support", past: "Supported" }],
+];
+
+/**
+ * Turns a short note the user typed ("yes i did monthly mgmt reports for the directors") into a CV bullet
+ * ("Prepared monthly management reports for the directors."). It never adds facts: no numbers, tools or
+ * results that aren't in the note. The only additions are an opening verb and, when the note doesn't
+ * already say it, the skill the user confirmed.
+ */
+export function noteToBullet(note: string, opts: NoteToBulletOptions): string {
+  let t = note
+    .trim()
+    .replace(/^[•·▪*\-–—]\s*/, "")
+    .replace(/\s+/g, " ")
+    // conversational openers that answer the question rather than describe the work
+    .replace(/^(?:yes|yeah|yep|sure|ok(?:ay)?)\b[\s,.!:-]*/i, "")
+    .replace(/^(?:i|we)\s+(?:have|had|did|do|was|were|am|used to|would|often|also|mainly|mostly)?\s*/i, "")
+    .replace(/^(?:have|had)\s+(?:experience|worked)\s+(?:in|with|on)\s+/i, "")
+    .replace(/^(?:experience|worked)\s+(?:in|with|on)\s+/i, "")
+    .replace(/^(?:done|did|doing)\s+/i, "")
+    .replace(/\bmgmt\b/gi, "management")
+    .replace(/\bmgr\b/gi, "manager")
+    .replace(/\bw\/\s*/gi, "with ")
+    .replace(/\bacct?s\b/gi, "accounts")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!t) return note.trim();
+
+  // "Helped the team build X" → "Supported the team in building X"; "Helped build X" → "Contributed to building X"
+  const helped = t.match(/^help(?:ed|ing|s)?\s+(?:to\s+)?(.*)$/i);
+  if (helped) {
+    const words = helped[1].split(/\s+/);
+    const vi = words.findIndex((w, i) => i < 5 && !!verbFromBase(w.toLowerCase()));
+    if (vi === 0) t = `${opts.current ? "Contribute" : "Contributed"} to ${verbFromBase(words[0].toLowerCase())!.gerund} ${words.slice(1).join(" ")}`;
+    else if (vi > 0) t = `${opts.current ? "Support" : "Supported"} ${words.slice(0, vi).join(" ")} in ${verbFromBase(words[vi].toLowerCase())!.gerund} ${words.slice(vi + 1).join(" ")}`;
+  }
+
+  const first = (t.split(/\s+/)[0] ?? "").toLowerCase().replace(/[^a-z]/g, "");
+  if (!verbFromAny(first)) {
+    // A noun phrase ("monthly management reports for the directors") — open with a verb that fits it
+    const hit = NOUN_VERBS.find(([re]) => re.test(t));
+    const verb = hit ? (opts.current ? hit[1].present : hit[1].past) : opts.current ? "Deliver" : "Delivered";
+    t = `${verb} ${t.charAt(0).toLowerCase()}${t.slice(1)}`;
+  }
+
+  // Tense, stronger opener, filler — the existing rules, which never add facts
+  t = rewriteBullet(t, { current: opts.current, mode: "balanced", endWithPeriod: false }).text;
+
+  // Name the confirmed skill if the note doesn't already, so the bullet actually shows it
+  const kw = opts.keyword?.trim();
+  if (kw) {
+    const words = kw.toLowerCase().split(/\s+/).filter((w) => w.length > 3);
+    const lower = t.toLowerCase();
+    // Covered when the note already says it, or most of its words — a redundant tag reads badly
+    const stemHits = words.filter((w) => lower.includes(w.slice(0, Math.max(4, w.length - 3)))).length;
+    const mentioned = !!textHasTerm(indexText(t), kw) || lower.includes(kw.toLowerCase()) || (words.length > 0 && stemHits >= Math.ceil(words.length / 2));
+    if (!mentioned) {
+      const phrase = lookupTerm(kw)?.category === "tool" ? `using ${kw}` : `supporting ${kw.toLowerCase()}`;
+      t = `${t.replace(/[.;,]+$/, "")}, ${phrase}`;
+    }
+  }
+
+  // Tools in their proper spelling: "power bi" → "Power BI", "excel" → "Excel"
+  for (const { term, surface } of findTerms(indexText(t)).values()) {
+    if (term.category !== "tool" || surface.toLowerCase() !== term.canonical.toLowerCase()) continue;
+    const escaped = surface.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    t = t.replace(new RegExp(`\\b${escaped}\\b`, "gi"), term.canonical);
+  }
+  t = sentenceCase(t.replace(/[.;,]+$/, "").replace(/\s+/g, " ").trim());
+  if (t.split(/\s+/).length > 32) t = shorten(t);
+  return opts.endWithPeriod ? `${t.replace(/[.;,]+$/, "")}.` : t;
 }

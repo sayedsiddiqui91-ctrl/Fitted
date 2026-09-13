@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { Briefcase, Check, FileDown, Mic, PenLine, RotateCcw } from "lucide-react";
 import type { CVDoc } from "@/lib/cv/schema";
 import { useStore } from "@/lib/store";
-import { downloadPdf } from "@/lib/export/pdf";
+import { downloadPdf, pdfOutcomeMessage } from "@/lib/export/pdf";
 import { Button } from "@/components/ui/Button";
 import { scoreTone } from "@/components/ui/misc";
 
@@ -59,9 +59,10 @@ export function DoneStep({ version, original, scoreBefore, scoreAfter, onRestart
           icon={<FileDown className="size-4" />}
           onClick={async () => {
             setExporting(true);
-            const m = await downloadPdf(version);
+            const msg = pdfOutcomeMessage(await downloadPdf(version));
             setExporting(false);
-            toast.success(m === "download" ? "PDF downloaded" : "Choose “Save as PDF” in the print dialog");
+            if (msg.tone === "success") toast.success(msg.title, { description: msg.description });
+            else toast(msg.title, { description: msg.description, duration: 9000 });
           }}
         >
           Download PDF
