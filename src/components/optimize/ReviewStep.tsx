@@ -6,7 +6,8 @@ import { ArrowRight, Check, CheckCheck, Columns2, HelpCircle, Pencil, RotateCcw,
 import type { CVDoc } from "@/lib/cv/schema";
 import type { Change, OptimizationPlan, Question } from "@/lib/ai/types";
 import { diffWords } from "@/lib/engine/diff";
-import { noteToBullet, prefersPresent } from "@/lib/engine/rewrite";
+import { prefersPresent } from "@/lib/engine/rewrite";
+import { noteSuggestions, type NoteSuggestions } from "@/lib/engine/noteWriter";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import { Dialog } from "@/components/ui/Dialog";
@@ -198,14 +199,18 @@ function QuestionCard({ q, doc, onAnswer }: { q: Question; doc: CVDoc; onAnswer:
   const [itemId, setItemId] = useState(q.detailItemId ?? doc.content.experience[0]?.id ?? "");
   const answered = !!q.answer;
   const [editing, setEditing] = useState(!answered);
-  /** A CV-ready version of what the user typed, shown for them to accept — never applied silently */
-  const [suggestion, setSuggestion] = useState<string | null>(null);
+  /** CV-ready versions of what the user typed, shown for them to choose — never applied silently */
+  const [suggestion, setSuggestion] = useState<NoteSuggestions | null>(null);
 
   const improveNote = () => {
     const target = doc.content.experience.find((e) => e.id === itemId) ?? doc.content.experience[0];
     const bullets = target?.bullets.map((b) => b.text) ?? [];
     const endWithPeriod = bullets.length ? bullets.filter((b) => /\.\s*$/.test(b)).length >= bullets.length / 2 : true;
-    setSuggestion(noteToBullet(detail, { keyword: q.keyword, current: !!target?.current && prefersPresent(bullets), endWithPeriod }));
+    setSuggestion(noteSuggestions(detail, { keyword: q.keyword, current: !!target?.current && prefersPresent(bullets), endWithPeriod }));
+  };
+  const pickSuggestion = (text: string) => {
+    setDetail(text);
+    setSuggestion(null);
   };
 
   if (answered && !editing) {
@@ -282,31 +287,40 @@ function QuestionCard({ q, doc, onAnswer }: { q: Question; doc: CVDoc; onAnswer:
               <Button size="sm" variant="secondary" icon={<Sparkles className="size-4" />} onClick={improveNote}>
                 Improve with assistant
               </Button>
-              <p className="mt-1.5 text-xs text-subtle">Turns your note into a CV bullet using only what you wrote — nothing invented.</p>
+              <p className="mt-1.5 text-xs text-subtle">Fixes spelling, combines what you did and writes it as a CV bullet. You choose before anything is added.</p>
             </div>
           )}
-          {suggestion && (
-            <div className="rounded-xl border border-accent/30 bg-accent-soft/40 p-3" aria-live="polite">
-              <p className="flex items-center gap-1.5 text-xs font-medium text-accent-soft-fg">
-                <Sparkles className="size-3.5" aria-hidden /> Suggested bullet
-              </p>
-              <p className="mt-1.5 text-sm leading-relaxed">{suggestion}</p>
-              <div className="mt-2.5 flex flex-wrap gap-2">
-                <Button
-                  size="sm"
-                  variant="primary"
-                  icon={<Check className="size-4" />}
-                  onClick={() => {
-                    setDetail(suggestion);
-                    setSuggestion(null);
-                  }}
-                >
+          {suggestion?.needsMore && (
+            <p className="rounded-xl border border-warning/30 bg-warning-soft px-3 py-2 text-[13px] text-warning" aria-live="polite">
+              Add a little more — what did you produce or do, and for whom? For example: “prepared monthly reports for the finance director”.
+            </p>
+          )}
+          {suggestion && !suggestion.needsMore && (
+            <div className="flex flex-col gap-2.5" aria-live="polite">
+              <div className="rounded-xl border border-accent/30 bg-accent-soft/40 p-3">
+                <p className="flex items-center gap-1.5 text-xs font-medium text-accent-soft-fg">
+                  <Sparkles className="size-3.5" aria-hidden /> Accurate — only what you wrote
+                </p>
+                <p className="mt-1.5 text-sm leading-relaxed">{suggestion.accurate}</p>
+                <Button size="sm" variant="primary" className="mt-2.5" icon={<Check className="size-4" />} onClick={() => pickSuggestion(suggestion.accurate)}>
                   Use this
                 </Button>
-                <Button size="sm" variant="ghost" onClick={() => setSuggestion(null)}>
-                  Keep mine
-                </Button>
               </div>
+              {suggestion.stronger && (
+                <div className="rounded-xl border border-border bg-surface p-3">
+                  <p className="flex items-center gap-1.5 text-xs font-medium text-fg">
+                    <Sparkles className="size-3.5 text-accent" aria-hidden /> Stronger — adds why this work mattered
+                  </p>
+                  <p className="mt-1.5 text-sm leading-relaxed">{suggestion.stronger}</p>
+                  <p className="mt-1.5 text-xs text-warning">Only use this if it's true for you — you may be asked about it in an interview.</p>
+                  <Button size="sm" variant="secondary" className="mt-2.5" icon={<Check className="size-4" />} onClick={() => pickSuggestion(suggestion.stronger!)}>
+                    Use this
+                  </Button>
+                </div>
+              )}
+              <Button size="sm" variant="ghost" className="self-start" onClick={() => setSuggestion(null)}>
+                Keep mine
+              </Button>
             </div>
           )}
           {detail.trim() && doc.content.experience.length > 0 && (

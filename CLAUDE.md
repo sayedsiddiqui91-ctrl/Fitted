@@ -67,8 +67,10 @@ A good first message: *"Read CLAUDE.md, run npm test, then <the change>."*
   `display:none` panel measures 0 wide, renders nothing and never scrolls.
 - **PDF editor redraws** (`app/pdf/[id]/page.tsx`): a page's canvas is keyed to the edits the *displayed* PDF was
   built from (`viewEdits`), not the latest edits. Keying to the latest ones made changes show only in the download.
-- **Answers become bullets through `noteToBullet()`** (`rewrite.ts`): the user's words plus an opening verb and the
-  confirmed skill — never numbers, tools or results that weren't in the note.
+- **Answers become bullets through `noteSuggestions()`** (`noteWriter.ts`): it fixes typos, splits a note into
+  activities and merges them. **Accurate** = only the user's words (plus a verb and the confirmed skill); **Stronger** =
+  adds the usual purpose of that work and is labelled "only if true" — never applied automatically. A tangled note
+  falls back to `noteToBullet()` (`rewrite.ts`); a vague one asks for more. A finished bullet is left untouched.
 - **Scores are facts**: every count-up animation has a timeout that puts the real number on screen even if
   animation frames never run.
 

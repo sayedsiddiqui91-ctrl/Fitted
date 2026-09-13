@@ -6,7 +6,8 @@ import { analyzeCV, evidenceFor, type BulletRef, type CVFacts } from "./cvAnalys
 import { guardText } from "./guard";
 import { buildTailoredSummary, polishSummary, summaryScore } from "./summaryWriter";
 import { validatePlan } from "./sectionValidator";
-import { noteToBullet, prefersPresent, rewriteBullet, toGerundClause } from "./rewrite";
+import { prefersPresent, rewriteBullet, toGerundClause } from "./rewrite";
+import { noteSuggestions } from "./noteWriter";
 import { indexText, joinList, lookupTerm, lowerFirst, sentenceCase, similarity, textHasTerm } from "./text";
 import { STRONG_VERBS } from "./verbs";
 
@@ -349,8 +350,10 @@ export function applyAnswer(plan: OptimizationPlan, question: Question, content:
       const targetItem = content.experience.find((e) => e.id === question.detailItemId) ?? content.experience[0];
       if (detail && detail.length > 8 && targetItem) {
         // Same writer as "Improve with assistant": a rough note becomes a CV bullet from the user's own words
-        const text = noteToBullet(detail, { keyword: kw, current: targetItem.current && prefersPresent(targetItem.bullets.map((x) => x.text)), endWithPeriod: period });
-        changes.push(
+        // The accurate version only: the stronger one adds claims, so it's used only when the user picks it
+        const text = noteSuggestions(detail, { keyword: kw, current: targetItem.current && prefersPresent(targetItem.bullets.map((x) => x.text)), endWithPeriod: period }).accurate;
+        // Too vague to write up without inventing ("worked on it sometimes"): the skill is still added, the bullet isn't
+        if (text) changes.push(
           mk({
             kind: "add-bullet",
             section: "experience",

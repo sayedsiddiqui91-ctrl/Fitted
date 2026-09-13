@@ -24,6 +24,7 @@ import { looksLikeAddress } from "../src/lib/engine/personalInfo";
 import { buildRuns } from "../src/lib/pdf/runs";
 import { paginate } from "../src/components/cv/CVPreview";
 import { noteToBullet } from "../src/lib/engine/rewrite";
+import { noteSuggestions } from "../src/lib/engine/noteWriter";
 import { pdfOutcomeMessage } from "../src/lib/export/pdf";
 
 // Found during in-browser end-to-end testing
@@ -571,6 +572,50 @@ suite("Optimizer: turning a short answer into a CV bullet", () => {
   test("the skill is not tacked on when the note already covers it", () => {
     const out = bullet("I prepared variance analysis for the CFO every quarter", "Financial analysis");
     expect(!/supporting financial analysis/i.test(out), out);
+  });
+});
+
+suite("Improve with assistant: understanding a messy note", () => {
+  const opts = { keyword: "Management reporting", current: false, endWithPeriod: true };
+
+  test("the owner's example: typos, three clauses, one merged bullet", () => {
+    const s = noteSuggestions("After preparing finace report i had create managment report as well i have prepare 2 reports", opts);
+    expect(s.accurate === "Prepared financial and management reports.", `accurate: ${s.accurate}`);
+    expect(
+      s.stronger === "Prepared and analyzed financial and management reports, transforming financial data into actionable insights to support management decision-making.",
+      `stronger: ${s.stronger}`,
+    );
+  });
+
+  test("separate tasks stay separate and read naturally", () => {
+    const s = noteSuggestions("I reconciled bank accounts and processed vendor invoices every week", { ...opts, keyword: "Account reconciliation" });
+    expect(s.accurate === "Reconciled bank accounts and processed vendor invoices every week.", s.accurate);
+    const b = noteSuggestions("made a budget for the marketing team and tracked it monthly", { ...opts, keyword: "Budgeting" });
+    expect(b.accurate === "Prepared and tracked a budget for the marketing team monthly.", b.accurate);
+  });
+
+  test("the accurate version never adds numbers or tools; the stronger one only adds purpose", () => {
+    for (const note of ["prepared finace report and managment report", "reconciled accounts and processed invoices", "made a budget and tracked it"]) {
+      const s = noteSuggestions(note, opts);
+      expect(!/\d/.test(s.accurate) && !/\d/.test(s.stronger ?? ""), `a number appeared: ${s.accurate} / ${s.stronger}`);
+      expect(!/\b(excel|sap|power bi|oracle|python|sql)\b/i.test(`${s.accurate} ${s.stronger ?? ""}`), `a tool appeared: ${s.accurate} / ${s.stronger}`);
+    }
+  });
+
+  test("a note too vague to write up asks for more instead of inventing", () => {
+    const s = noteSuggestions("worked on it sometimes", { ...opts, keyword: "Forecasting" });
+    expect(s.needsMore === true && s.accurate === "", JSON.stringify(s));
+  });
+
+  test("a bullet the user already picked is left exactly as it is", () => {
+    const picked = "Prepared and analyzed financial and management reports, transforming financial data into actionable insights to support management decision-making.";
+    expect(noteSuggestions(picked, opts).accurate === picked, noteSuggestions(picked, opts).accurate);
+  });
+
+  test("a tangled note falls back to the careful writer rather than guessing", () => {
+    const s = noteSuggestions("helped the finance team build the annual budget in excel", { ...opts, keyword: "Budgeting" });
+    expect(s.accurate === "Supported the finance team in building the annual budget in Excel.", s.accurate);
+    expect(!/Supported and/.test(s.stronger ?? ""), `stronger paired a verb onto the wrong one: ${s.stronger}`);
   });
 });
 
