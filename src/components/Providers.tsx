@@ -4,6 +4,7 @@ import { MotionConfig } from "motion/react";
 import { Tooltip } from "radix-ui";
 import { Toaster } from "sonner";
 import { CV_CSS } from "@/lib/cv/styles";
+import { ReportBug } from "@/components/ReportBug";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
@@ -12,6 +13,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         {/* CV template styles (shared by preview, thumbnails and export) */}
         <style dangerouslySetInnerHTML={{ __html: CV_CSS }} />
         {children}
+        <ReportBug />
         <Toaster
           position="bottom-center"
           toastOptions={{

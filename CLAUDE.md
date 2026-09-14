@@ -80,3 +80,9 @@ A good first message: *"Read CLAUDE.md, run npm test, then <the change>."*
   locally. The two versions are **pinned together** (Chromium 152 ↔ puppeteer-core 25.10.0) — upgrade them as a
   pair or launches fail. Without it, phones got a print dialog that many of them (and every in-app browser) ignore.
 - Scanned-PDF OCR (tesseract.js) downloads its engine from a public CDN the first time.
+
+## Bug reports
+- "Report a bug" (`src/components/ReportBug.tsx`, form loaded on demand) posts to `/api/bug`, which forwards the row
+  to the owner's Google Sheet via an Apps Script web app (`scripts/bug-report-sheet.gs`). The script URL is the
+  optional server-side env `FITTED_BUG_SHEET_URL` (set on Vercel); without it the form says reports aren't set up.
+  Row layout lives in `src/lib/bugReport.ts` and must match the sheet's columns.
