@@ -1,14 +1,16 @@
 import { suite, test, expect } from "./harness";
-import { BUG_FEATURES, BugReportSchema, describeBrowser, toSheetRow } from "../src/lib/bugReport";
+import { BUG_FEATURES, BUG_FORM_FIELDS, BugReportSchema, bugFormUrl, describeBrowser, toFormBody } from "../src/lib/bugReport";
 
 suite("Report a bug", () => {
-  test("a report becomes a row in the sheet's column order: Name · Feature · Comment · Page · Browser · Time", () => {
+  test("a report fills every field of the Google Form: Name · Feature · Comment · Page · Browser · Time", () => {
     const r = BugReportSchema.parse({ name: " Ayon ", feature: "Job Optimizer", comment: "The match score stayed at 0 after I pasted the job.", page: "/app/optimize" });
-    const row = toSheetRow(r, { browser: "Chrome · Windows", time: new Date("2026-09-14T10:00:00Z") });
-    expect(row.length === 6, `expected 6 columns, got ${row.length}`);
-    expect(row[0] === "Ayon", "name is trimmed");
-    expect(row[1] === "Job Optimizer" && row[3] === "/app/optimize", "feature and page are kept");
-    expect(row[4] === "Chrome · Windows" && row[5] === "2026-09-14T10:00:00.000Z", "browser and time are recorded");
+    const body = toFormBody(r, { browser: "Chrome · Windows", time: new Date("2026-09-14T10:00:00Z") });
+    expect([...body.keys()].length === 6, `expected 6 fields, got ${[...body.keys()].length}`);
+    expect(body.get(BUG_FORM_FIELDS.name) === "Ayon", "name is trimmed");
+    expect(body.get(BUG_FORM_FIELDS.feature) === "Job Optimizer" && body.get(BUG_FORM_FIELDS.page) === "/app/optimize", "feature and page are kept");
+    expect(body.get(BUG_FORM_FIELDS.browser) === "Chrome · Windows" && body.get(BUG_FORM_FIELDS.time) === "2026-09-14T10:00:00.000Z", "browser and time are recorded");
+    expect(new Set(Object.values(BUG_FORM_FIELDS)).size === 6 && Object.values(BUG_FORM_FIELDS).every((f) => /^entry\.\d+$/.test(f)), "every column maps to a distinct entry id");
+    expect(bugFormUrl().endsWith("/formResponse"), "submits to the form's response endpoint");
   });
 
   test("a report needs a real description and a known feature", () => {

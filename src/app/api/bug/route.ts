@@ -1,17 +1,14 @@
-import { BugReportSchema, describeBrowser, toSheetRow } from "@/lib/bugReport";
+import { BugReportSchema, bugFormUrl, describeBrowser, toFormBody } from "@/lib/bugReport";
 import { clientKey, rateLimit } from "@/lib/server/rateLimit";
 
-/* Forwards a bug report to the owner's Google Sheet through its Apps Script web app.
-   The script URL is server-side only (FITTED_BUG_SHEET_URL), so visitors can't post to the
-   sheet directly; this route validates and rate-limits on their behalf. */
+/* Forwards a bug report to the owner's Google Sheet by submitting the Google Form linked to it.
+   This route validates and rate-limits on the visitor's behalf, and adds the browser and time. */
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
 const THANKS = "Thanks — your report has been sent.";
 
 export async function POST(req: Request) {
-  const url = process.env.FITTED_BUG_SHEET_URL;
-  if (!url) return Response.json({ error: "Bug reports aren't set up on this site yet." }, { status: 503 });
   if (!rateLimit(`bug:${clientKey(req)}`, 5, 10 * 60_000)) return Response.json({ error: "You've sent a few reports already. Please wait a few minutes and try again." }, { status: 429 });
 
   const raw = await req.text();
@@ -27,19 +24,19 @@ export async function POST(req: Request) {
   // Bots fill the hidden field; pretend it worked so they stop trying
   if (parsed.data.website) return Response.json({ ok: true, message: THANKS });
 
-  const row = toSheetRow(parsed.data, { browser: describeBrowser(req.headers.get("user-agent")), time: new Date() });
+  const form = toFormBody(parsed.data, { browser: describeBrowser(req.headers.get("user-agent")), time: new Date() });
   try {
-    const res = await fetch(url, {
+    const res = await fetch(bugFormUrl(process.env.BUG_FORM_ID), {
       method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" }, // text/plain avoids a CORS preflight that Apps Script can't answer
-      body: JSON.stringify({ row }),
-      redirect: "follow", // Apps Script answers a POST with a redirect to the result
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: form.toString(),
+      redirect: "follow",
       signal: AbortSignal.timeout(20_000),
     });
-    if (!res.ok) throw new Error(`sheet responded ${res.status}`);
+    if (!res.ok) throw new Error(`form responded ${res.status}`);
     return Response.json({ ok: true, message: THANKS });
   } catch (err) {
-    console.error("[bug] forwarding to sheet failed:", err instanceof Error ? err.message : err);
+    console.error("[bug] submitting to the form failed:", err instanceof Error ? err.message : err);
     return Response.json({ error: "We couldn't send your report right now. Please try again in a moment." }, { status: 502 });
   }
 }

@@ -82,7 +82,7 @@ A good first message: *"Read CLAUDE.md, run npm test, then <the change>."*
 - Scanned-PDF OCR (tesseract.js) downloads its engine from a public CDN the first time.
 
 ## Bug reports
-- "Report a bug" (`src/components/ReportBug.tsx`, form loaded on demand) posts to `/api/bug`, which forwards the row
-  to the owner's Google Sheet via an Apps Script web app (`scripts/bug-report-sheet.gs`). The script URL is the
-  optional server-side env `FITTED_BUG_SHEET_URL` (set on Vercel); without it the form says reports aren't set up.
-  Row layout lives in `src/lib/bugReport.ts` and must match the sheet's columns.
+- "Report a bug" (`src/components/ReportBug.tsx`, form loaded on demand) posts to `/api/bug`, which submits the
+  owner's Google Form "Fitted-CV report bug" (public, linked to the owner's Google Sheet; responses appear in a
+  "Form Responses" tab). No key, env var or Apps Script is needed. The form id and `entry.*` field ids live in
+  `src/lib/bugReport.ts`; if the form's questions are ever changed, re-read the ids from its viewform page.
